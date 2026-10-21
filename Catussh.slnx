@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Catussh.App/Catussh.App.csproj" />
     <Project Path="src/Catussh.Core/Catussh.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
