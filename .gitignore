@@ -119,3 +119,13 @@ yarn-error.log*
 
 # Generated from Application/mCatusshUITests/project.yml by xcodegen
 Application/mCatusshUITests/mCatusshUITests.xcodeproj/
+
+# ---- catussh.NET (.NET port) ----
+bin/
+obj/
+*.user
+.vs/
+# The Swift checkout this port was read from is not part of the tree.
+_src/
+# Publish output, rebuilt by CI or `dotnet publish -p:PublishProfile=win-x64`.
+/dist/
