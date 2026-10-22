@@ -32,9 +32,16 @@ node tools/sync-site.mjs                      # 同步设计文件
 node tools/serve.mjs 5201 site                # 本地预览
 ```
 
-部署到 Cloudflare Pages 见 `.github/workflows/site.yml`，需要配
-`CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID` 两个 secret，
-Pages 项目名 `catussh`，绑到 `catssh.swufefox.com`。
+部署由 Cloudflare Pages 的 Git 集成负责，push 到 main 自动构建：
+
+| 设置 | 值 |
+| --- | --- |
+| Build command | `node tools/sync-site.mjs` |
+| Build output directory | `site` |
+| Root directory | 留空 |
+
+构建时会重新同步设计文件，所以官网永远和应用当前的样子一致。
+站点绑定 `catssh.swufefox.com`（`site/_redirects` 把 `www` 301 过去）。
 
 ## 许可
 
