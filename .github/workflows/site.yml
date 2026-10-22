@@ -1,0 +1,51 @@
+name: site
+
+# Builds and deploys the product page to Cloudflare Pages.
+#
+# Needs two repository secrets:
+#   CLOUDFLARE_API_TOKEN  — a token with the "Cloudflare Pages: Edit" permission
+#   CLOUDFLARE_ACCOUNT_ID — from the Cloudflare dashboard
+# and a Pages project named catussh (Settings → Pages → Create project).
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "src/Catussh.Design/**", "tools/sync-site.mjs"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fail if the committed copies drifted
+        run: |
+          # Compare before syncing: a stale copy means someone edited site/ by hand
+          # instead of the source, and the deploy would quietly ship the wrong CSS.
+          stale=0
+          for f in tokens.css components.css monitor.css monitor.js monitor-fixture.json; do
+            if ! cmp -s "src/Catussh.Design/$f" "site/$f"; then
+              echo "::warning file=site/$f::site/$f differs from src/Catussh.Design/$f"
+              stale=1
+            fi
+          done
+          if [ "$stale" = "1" ]; then
+            echo "Run 'node tools/sync-site.mjs' and commit the result."
+            exit 1
+          fi
+
+      - name: Sync the design system into site/
+        run: node tools/sync-site.mjs
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=catussh

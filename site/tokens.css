@@ -1,0 +1,141 @@
+/*
+ * tokens.css — port of Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift
+ *
+ * Every value here is a literal copy of the Swift token. The Swift builds
+ * appearance-aware colours from `Color(rxLight:dark:)`; the equivalent is a
+ * :root block for light and a `.dark` block for dark, both fed by the same
+ * 0xRRGGBBAA literals converted to CSS rgba() — no hand-picked shades.
+ */
+
+:root {
+  /* MARK: Spacing — 4pt alignment grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* MARK: Radius */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-card: 18px;
+
+  /* MARK: Metrics */
+  --control-height: 28px;
+  --small-control-height: 22px;
+  --sidebar-width: 216px;
+  --table-row-height: 40px;
+  --dense-row-height: 32px;
+  --table-header-height: 28px;
+  --form-row-min-height: 56px;
+
+  /* MARK: Palette (light) */
+  --rx-window: rgba(238, 240, 245, 1);                 /* 0xEEF0F5FF */
+  --rx-sidebar-selected: rgba(225, 227, 234, 1);        /* 0xE1E3EAFF */
+  --rx-surface: rgba(255, 255, 255, 1);                 /* 0xFFFFFFFF */
+  --rx-surface-sunken: rgba(241, 242, 245, 1);          /* 0xF1F2F5FF */
+  --rx-pill: rgba(227, 229, 235, 1);                    /* 0xE3E5EBFF */
+  --rx-hairline: rgba(227, 229, 234, 1);                /* 0xE3E5EAFF */
+  --rx-control-border: rgba(138, 141, 150, 1);          /* 0x8A8D96FF */
+  --rx-ink: rgba(29, 29, 31, 1);                        /* 0x1D1D1FFF */
+  --rx-ink-secondary: rgba(95, 97, 104, 1);             /* 0x5F6168FF */
+  --rx-ink-tertiary: rgba(112, 115, 128, 1);            /* 0x707380FF */
+  --rx-accent: rgba(75, 73, 200, 1);                    /* 0x4B49C8FF */
+  --rx-on-accent: rgba(255, 255, 255, 1);               /* 0xFFFFFFFF */
+  --rx-series-2: rgba(59, 148, 214, 1);                 /* 0x3B94D6FF */
+  --rx-series-2-fill: rgba(59, 148, 214, 0.2);          /* 0x3B94D633 */
+  --rx-accent-fill: rgba(75, 73, 200, 0.149);           /* 0x4B49C826 */
+  --rx-segment-selected: rgba(110, 112, 121, 1);        /* 0x6E7079FF */
+  --rx-on-segment: rgba(255, 255, 255, 1);              /* 0xFFFFFFFF */
+  --rx-success: rgba(36, 161, 72, 1);                   /* 0x24A148FF */
+  --rx-success-halo: rgba(36, 161, 72, 0.149);          /* 0x24A14826 */
+  --rx-warning: rgba(168, 100, 0, 1);                   /* 0xA86400FF */
+  --rx-danger: rgba(217, 48, 37, 1);                    /* 0xD93025FF */
+  --rx-row-selected: rgba(228, 228, 247, 1);            /* 0xE4E4F7FF */
+  --rx-row-hover: rgba(244, 245, 248, 1);               /* 0xF4F5F8FF */
+  --rx-scrim: rgba(20, 22, 30, 0.4);                    /* 0x14161E66 */
+  --rx-terminal-bg: rgba(22, 23, 26, 1);                /* 0x16171AFF */
+  --rx-terminal-fg: rgba(230, 231, 234, 1);             /* 0xE6E7EAFF */
+  --rx-terminal-muted: rgba(139, 142, 150, 1);          /* 0x8B8E96FF */
+  --rx-terminal-green: rgba(95, 211, 131, 1);           /* 0x5FD383FF */
+  --rx-terminal-blue: rgba(124, 183, 255, 1);           /* 0x7CB7FFFF */
+  --rx-terminal-yellow: rgba(232, 194, 106, 1);         /* 0xE8C26AFF */
+  --rx-terminal-red: rgba(255, 123, 114, 1);            /* 0xFF7B72FF */
+  --rx-terminal-cursor: rgba(169, 167, 255, 1);         /* 0xA9A7FFFF */
+
+  /* Card shadow: black at 5% in light, 20% in dark (Card.swift) */
+  --rx-card-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+
+  /* MARK: Type — every size/weight from Font extension in Tokens.swift */
+  --font-page-title: 700 26px var(--rx-font-ui);        /* rxPageTitle */
+  --font-metric-xl: 600 32px var(--rx-font-ui);         /* rxMetricXL */
+  --font-metric-md: 600 16px var(--rx-font-ui);         /* rxMetricMD */
+  --font-sheet-title: 700 18px var(--rx-font-ui);       /* rxSheetTitle */
+  --font-section-title: 600 13px var(--rx-font-ui);     /* rxSectionTitle */
+  --font-body: 400 13px var(--rx-font-ui);              /* rxBody */
+  --font-body-strong: 600 13px var(--rx-font-ui);       /* rxBodyStrong */
+  --font-caption: 500 11px var(--rx-font-ui);           /* rxCaption */
+  --font-section-label: 500 11px var(--rx-font-ui);     /* rxSectionLabel */
+  --font-help: 400 11px var(--rx-font-ui);              /* rxHelp */
+  --font-unit: 500 13px var(--rx-font-ui);              /* rxUnit */
+  --font-axis: 400 10px var(--rx-font-ui);              /* rxAxis */
+  --font-code: 400 12px var(--rx-font-mono);            /* rxCode */
+
+  /* rxCapsTracking: 0.04em of 11pt = 0.44pt */
+  --rx-caps-tracking: 0.44px;
+
+  --rx-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
+  --rx-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+}
+
+.dark {
+  --rx-window: rgba(27, 28, 31, 1);                     /* 0x1B1C1FFF */
+  --rx-sidebar-selected: rgba(52, 54, 59, 1);           /* 0x34363BFF */
+  --rx-surface: rgba(38, 39, 43, 1);                    /* 0x26272BFF */
+  --rx-surface-sunken: rgba(31, 32, 35, 1);             /* 0x1F2023FF */
+  --rx-pill: rgba(47, 49, 53, 1);                       /* 0x2F3135FF */
+  --rx-hairline: rgba(58, 59, 64, 1);                   /* 0x3A3B40FF */
+  --rx-control-border: rgba(118, 120, 127, 1);          /* 0x76787FFF */
+  --rx-ink: rgba(245, 245, 247, 1);                     /* 0xF5F5F7FF */
+  --rx-ink-secondary: rgba(161, 163, 170, 1);           /* 0xA1A3AAFF */
+  --rx-ink-tertiary: rgba(138, 141, 150, 1);            /* 0x8A8D96FF */
+  --rx-accent: rgba(133, 131, 255, 1);                  /* 0x8583FFFF */
+  --rx-on-accent: rgba(18, 18, 46, 1);                  /* 0x12122EFF */
+  --rx-series-2: rgba(108, 188, 242, 1);                /* 0x6CBCF2FF */
+  --rx-series-2-fill: rgba(108, 188, 242, 0.161);       /* 0x6CBCF229 */
+  --rx-accent-fill: rgba(133, 131, 255, 0.18);          /* 0x8583FF2E */
+  --rx-segment-selected: rgba(95, 97, 105, 1);          /* 0x5F6169FF */
+  --rx-on-segment: rgba(255, 255, 255, 1);              /* 0xFFFFFFFF */
+  --rx-success: rgba(52, 209, 88, 1);                   /* 0x34D158FF */
+  --rx-success-halo: rgba(52, 209, 88, 0.2);            /* 0x34D15833 */
+  --rx-warning: rgba(255, 179, 64, 1);                  /* 0xFFB340FF */
+  --rx-danger: rgba(255, 105, 97, 1);                   /* 0xFF6961FF */
+  --rx-row-selected: rgba(52, 52, 90, 1);               /* 0x34345AFF */
+  --rx-row-hover: rgba(44, 45, 50, 1);                  /* 0x2C2D32FF */
+  --rx-scrim: rgba(0, 0, 0, 0.549);                     /* 0x0000008C */
+  --rx-terminal-bg: rgba(18, 19, 22, 1);                /* 0x121316FF */
+
+  --rx-card-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+/*
+ * Type scale as utility classes. Each mirrors one `Font.rx*` constant; the
+ * numeric faces use tabular figures exactly where Swift calls
+ * `.monospacedDigit()`.
+ */
+.rx-page-title { font: var(--font-page-title); letter-spacing: -0.01em; }
+.rx-metric-xl { font: var(--font-metric-xl); font-variant-numeric: tabular-nums; }
+.rx-metric-md { font: var(--font-metric-md); font-variant-numeric: tabular-nums; }
+.rx-sheet-title { font: var(--font-sheet-title); }
+.rx-section-title { font: var(--font-section-title); }
+.rx-body { font: var(--font-body); }
+.rx-body-strong { font: var(--font-body-strong); }
+.rx-caption { font: var(--font-caption); }
+.rx-section-label { font: var(--font-section-label); }
+.rx-help { font: var(--font-help); }
+.rx-unit { font: var(--font-unit); }
+.rx-axis { font: var(--font-axis); font-variant-numeric: tabular-nums; }
+.rx-code { font: var(--font-code); }

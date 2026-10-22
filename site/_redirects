@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects.
+# The canonical host is catssh.swufefox.com; www is folded into it so the two
+# never compete in a search result.
+https://www.catssh.swufefox.com/* https://catssh.swufefox.com/:splat 301!

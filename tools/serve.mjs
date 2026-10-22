@@ -1,18 +1,21 @@
-// Minimal static server for the design preview: `node tools/serve.mjs [port]`.
-// Serves src/Catussh.Design so the page can be opened without file:// quirks.
+// Minimal static server: `node tools/serve.mjs [port] [dir]`.
+// Defaults to the app's design files; pass "site" to preview the product page.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("../src/Catussh.Design/", import.meta.url));
+const dir = process.argv[3] ?? "src/Catussh.Design";
+const root = fileURLToPath(new URL(`../${dir}/`, import.meta.url));
 const port = Number(process.argv[2] ?? 5199);
 
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
   ".woff2": "font/woff2",
 };
 

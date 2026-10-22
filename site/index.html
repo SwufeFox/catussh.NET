@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>catussh.NET — every server, one window</title>
+  <meta name="description" content="An SSH terminal, SFTP and a live resource monitor for the Linux and macOS servers you look after. Native, fast, quiet." />
+
+  <!-- The design system, copied from the app by tools/sync-site.mjs -->
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="monitor.css" />
+  <link rel="stylesheet" href="site.css" />
+</head>
+<body>
+
+<header class="site-nav">
+  <a class="site-nav__brand" href="#top">
+    <span class="site-mark" aria-hidden="true">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M6 8.2l2.4 2L6 12.2"/><path d="M10.4 12.4h3.6"/>
+      </svg>
+    </span>
+    <span class="site-nav__name">catussh<span class="site-nav__tld">.NET</span></span>
+  </a>
+  <nav class="site-nav__links">
+    <a href="#features">Features</a>
+    <a href="#monitor">Monitor</a>
+    <a href="#install">Install</a>
+  </nav>
+  <div class="site-nav__actions">
+    <button class="rx-icon-button site-theme" data-theme-toggle aria-label="Switch appearance">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="8" cy="8" r="3.1"/>
+        <path d="M8 1.2v1.6M8 13.2v1.6M14.8 8h-1.6M2.8 8H1.2M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M4.3 4.3 3.2 3.2"/>
+      </svg>
+    </button>
+    <a class="rx-button rx-button--bordered rx-button--small" href="https://github.com/SwufeFox/catussh.NET">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============================================================ hero -->
+  <section class="hero">
+    <div class="hero__copy">
+      <span class="rx-caps-label hero__eyebrow">Windows · .NET 10 · MIT</span>
+      <h1 class="hero__title">Every server,<br />one window.</h1>
+      <p class="hero__lead">
+        An SSH terminal, SFTP and a live resource monitor for the Linux and macOS
+        machines you look after. No agent to install on the far side — it reads
+        what the system already reports.
+      </p>
+      <div class="hero__actions">
+        <a class="rx-button rx-button--primary" href="#install">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6v8.2"/><path d="M4.6 7.6 8 11l3.4-3.4"/><path d="M3 13.4h10"/></svg>
+          Download for Windows
+        </a>
+        <a class="rx-button rx-button--bordered" href="#features">See what it does</a>
+      </div>
+    </div>
+
+    <!-- The product shot is the product: this window is the real design system. -->
+    <div class="hero__shot">
+      <div class="app-window" role="img" aria-label="catussh showing a server's monitor">
+        <div class="app-window__bar">
+          <span class="rx-traffic-light rx-traffic-light--close"></span>
+          <span class="rx-traffic-light rx-traffic-light--min"></span>
+          <span class="rx-traffic-light rx-traffic-light--max"></span>
+          <span class="app-window__title">catussh — web-01</span>
+        </div>
+        <div class="app-window__body">
+          <aside class="rx-sidebar app-window__sidebar">
+            <a class="rx-sidebar__row" href="#top">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7 8 2.5 13.5 7"/><path d="M4 6.2V13h8V6.2"/><path d="M6.5 13V9.5h3V13"/></svg>
+              <span>Home</span>
+            </a>
+            <div class="rx-sidebar__section">Manage</div>
+            <a class="rx-sidebar__row rx-sidebar__row--selected" href="#top">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="3" width="12" height="4.2" rx="1.2"/><rect x="2" y="8.8" width="12" height="4.2" rx="1.2"/></svg>
+              <span>Servers</span><span class="rx-sidebar__count">5</span>
+            </a>
+            <a class="rx-sidebar__row" href="#top">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.4"/><path d="M2.2 13c.5-2.2 2-3.4 3.8-3.4S9.3 10.8 9.8 13"/></svg>
+              <span>Identities</span><span class="rx-sidebar__count">1</span>
+            </a>
+            <a class="rx-sidebar__row" href="#top">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 4.6 2.8 8l2.8 3.4M10.4 4.6 13.2 8l-2.8 3.4"/></svg>
+              <span>Snippets</span>
+            </a>
+          </aside>
+          <div class="rx-content app-window__content">
+            <div class="rx-page" id="hero-dashboard"><!-- filled by site.js --></div>
+          </div>
+        </div>
+      </div>
+      <p class="hero__caption rx-help-text">
+        The Monitor page, running against a real Linux host. Numbers are live.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ facts -->
+  <section class="facts" aria-label="At a glance">
+    <div class="rx-facts">
+      <div class="rx-fact"><span class="rx-caps-label">Platform</span><span class="rx-fact__value">Windows 10 / 11</span></div>
+      <div class="rx-fact"><span class="rx-caps-label">Runtime</span><span class="rx-fact__value">.NET 10, self-contained</span></div>
+      <div class="rx-fact"><span class="rx-caps-label">Remote</span><span class="rx-fact__value">Linux &amp; macOS</span></div>
+      <div class="rx-fact"><span class="rx-caps-label">Agent</span><span class="rx-fact__value">None</span></div>
+      <div class="rx-fact"><span class="rx-caps-label">License</span><span class="rx-fact__value">MIT</span></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ features -->
+  <section class="section" id="features">
+    <header class="section__head">
+      <span class="rx-caps-label">What it does</span>
+      <h2 class="section__title">Six things, done properly</h2>
+      <p class="section__lead">
+        Each one is a page you can keep open. The window is quiet on purpose —
+        nothing moves unless a server tells it something.
+      </p>
+    </header>
+
+    <div class="feature-grid">
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 6.6l1.9 1.6L5 9.8"/><path d="M8.4 10h2.6"/></svg>
+        </span>
+        <h3 class="feature__title">Terminal</h3>
+        <p class="feature__body">
+          A real terminal session with recorded shortcuts, installed fonts and a
+          live colour preview while you choose a theme.
+        </p>
+      </article>
+
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.4 5.2a1.2 1.2 0 0 1 1.2-1.2h2.6l1.2 1.3h4.8a1.2 1.2 0 0 1 1.2 1.2v4.9a1.2 1.2 0 0 1-1.2 1.2H3.6a1.2 1.2 0 0 1-1.2-1.2z"/></svg>
+        </span>
+        <h3 class="feature__title">Files</h3>
+        <p class="feature__body">
+          SFTP beside the terminal. Upload, download, rename and delete with
+          progress that tells you the speed, not a spinner.
+        </p>
+      </article>
+
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="5.6"/><path d="M8 8l2.6-1.6"/><path d="M8 2.4V4M8 12v1.6M14 8h-1.6M3.6 8H2"/></svg>
+        </span>
+        <h3 class="feature__title">Monitor</h3>
+        <p class="feature__body">
+          CPU, memory, disks, network throughput and NVIDIA GPUs, read from the
+          system's own tools. No daemon, no agent, nothing to deploy.
+        </p>
+      </article>
+
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.4"/><path d="M2.2 13c.5-2.2 2-3.4 3.8-3.4S9.3 10.8 9.8 13"/><circle cx="12" cy="9.6" r="1.2"/><path d="M13.2 9.6v2.2"/></svg>
+        </span>
+        <h3 class="feature__title">Identities</h3>
+        <p class="feature__body">
+          Passwords or keys, saved once and shared across servers. Stored
+          encrypted under your Windows account, never in plain text.
+        </p>
+      </article>
+
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 4.6 2.8 8l2.8 3.4M10.4 4.6 13.2 8l-2.8 3.4"/></svg>
+        </span>
+        <h3 class="feature__title">Snippets</h3>
+        <p class="feature__body">
+          Keep the commands you type every week, then run one across a group of
+          servers at once and read the output together.
+        </p>
+      </article>
+
+      <article class="rx-card feature">
+        <span class="rx-symbol-tile feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.2h9.2M9.4 3.4l2.8 2.8-2.8 2.8"/><path d="M13 9.8H3.8M6.6 12.6 3.8 9.8l2.8-2.8"/></svg>
+        </span>
+        <h3 class="feature__title">Port Forward</h3>
+        <p class="feature__body">
+          Reach a database or a dashboard on a private network as if it were
+          local. Start it, leave it, close it when you are done.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============================================================ monitor -->
+  <section class="section section--sunken" id="monitor">
+    <header class="section__head">
+      <span class="rx-caps-label">The monitor</span>
+      <h2 class="section__title">One probe, every number</h2>
+      <p class="section__lead">
+        A single merged script samples the counters twice, a second apart, then
+        reads everything else behind markers. One exec channel, one round trip.
+      </p>
+    </header>
+
+    <div class="monitor-detail">
+      <div class="rx-card monitor-detail__text">
+        <h3 class="monitor-detail__title">What it reads</h3>
+        <div class="rx-divided-stack monitor-detail__list">
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">CPU</span>
+            <span class="rx-help-text"><code class="rx-code">/proc/stat</code> sampled twice, per-core and total</span>
+          </div>
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">Memory</span>
+            <span class="rx-help-text"><code class="rx-code">/proc/meminfo</code>, or <code class="rx-code">vm_stat</code> on macOS</span>
+          </div>
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">Disks</span>
+            <span class="rx-help-text"><code class="rx-code">df -Pk</code>, so a mount point with spaces survives</span>
+          </div>
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">Network</span>
+            <span class="rx-help-text"><code class="rx-code">/proc/net/dev</code> deltas, or <code class="rx-code">netstat -ibn</code></span>
+          </div>
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">GPUs</span>
+            <span class="rx-help-text"><code class="rx-code">nvidia-smi -q -x</code>, on its own channel so it can be slow</span>
+          </div>
+          <div class="monitor-detail__row">
+            <span class="rx-caps-label">Load</span>
+            <span class="rx-help-text"><code class="rx-code">/proc/loadavg</code>, or <code class="rx-code">top -l 2</code> on macOS</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="monitor-detail__cards">
+        <div class="rx-card monitor-note">
+          <span class="rx-caps-label">If it goes wrong</span>
+          <p class="monitor-note__body">
+            A hung probe empties its own card and leaves the rest alone. Lose the
+            connection and the last reading stays on screen, labelled, instead of
+            blanking out.
+          </p>
+        </div>
+        <div class="rx-card monitor-note">
+          <span class="rx-caps-label">Why no agent</span>
+          <p class="monitor-note__body">
+            Everything here is a tool the operating system already ships. Nothing
+            to install, nothing to keep updated, nothing listening on the far side.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ install -->
+  <section class="section" id="install">
+    <header class="section__head">
+      <span class="rx-caps-label">Install</span>
+      <h2 class="section__title">Two ways in</h2>
+    </header>
+
+    <div class="install">
+      <div class="rx-card install__card">
+        <span class="rx-caps-label">Download</span>
+        <h3 class="install__title">Grab the zip</h3>
+        <p class="rx-help-text install__body">
+          Self-contained build — the runtime is inside it, so there is nothing
+          else to install. Unpack it and run <code class="rx-code">Catussh.exe</code>.
+        </p>
+        <a class="rx-button rx-button--primary" href="https://github.com/SwufeFox/catussh.NET/releases/latest">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6v8.2"/><path d="M4.6 7.6 8 11l3.4-3.4"/><path d="M3 13.4h10"/></svg>
+          Latest release
+        </a>
+      </div>
+
+      <div class="rx-card install__card">
+        <span class="rx-caps-label">From source</span>
+        <h3 class="install__title">Build it yourself</h3>
+        <p class="rx-help-text install__body">
+          Needs the .NET 10 SDK. WebView2 ships with Windows 10 and 11.
+        </p>
+        <pre class="rx-code-block install__code"><code>git clone https://github.com/SwufeFox/catussh.NET
+cd catussh.NET
+dotnet run --project src/Catussh.App</code></pre>
+      </div>
+    </div>
+
+    <p class="install__requirement rx-help-text">
+      Windows 10 or 11, 64-bit. The servers you point it at can be any Linux, or macOS.
+    </p>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <span class="site-nav__name">catussh<span class="site-nav__tld">.NET</span></span>
+      <span class="rx-help-text">A Windows port of catussh, built on .NET 10.</span>
+    </div>
+    <div class="site-footer__links">
+      <a href="https://github.com/SwufeFox/catussh.NET">Source</a>
+      <a href="https://github.com/mizorewww/catussh">Original catussh</a>
+      <a href="https://github.com/SwufeFox/catussh.NET/blob/main/LICENSE">MIT license</a>
+    </div>
+  </div>
+</footer>
+
+<!-- The app's own components, so the product shot is not a mock-up. -->
+<script src="monitor.js"></script>
+<script src="site.js"></script>
+</body>
+</html>

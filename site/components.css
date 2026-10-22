@@ -1,0 +1,853 @@
+/
+/* An empty header cell must not reserve the 220px actions gutter. */
+.rx-table__cell--actions:empty {
+  width: 0;
+  padding: 0;
+}*
+ * components.css — port of Card.swift, Controls.swift, Status.swift, Charts.swift,
+ * Form.swift, Page.swift and Motion.swift from Foundation/CatusshDesign.
+ *
+ * Class names keep the Swift type names (rxCard -> .rx-card, CapsLabel ->
+ * .rx-caps-label) so a reader can go from a view file to its CSS and back.
+ */
+
+/* ============================================================
+ * Motion.swift — rxQuick: easeOut(0.12), rxArrive: easeOut(0.28)
+ * ========================================================== */
+:root {
+  --rx-quick: 120ms ease-out;
+  --rx-arrive: 280ms ease-out;
+}
+
+/*
+ * SF Symbols have an intrinsic size; an inline <svg> does not, and would stretch
+ * to whatever box it lands in. Every icon gets the 13pt default that
+ * RXButtonLabelStyle uses, and each component below overrides it where the
+ * Swift file specifies a different point size.
+ */
+svg { width: 13px; height: 13px; flex: none; display: block; }
+
+/* ============================================================
+ * Card.swift
+ * ========================================================== */
+
+/* Solid `surface`, hairline edge, soft shadow. Content is never glass. */
+.rx-card {
+  background: var(--rx-surface);
+  border: 0.5px solid var(--rx-hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--rx-card-shadow);
+  padding: var(--space-4);
+}
+
+.rx-card--flush { padding: 0; overflow: hidden; }
+
+.rx-card--chrome { padding: 0; overflow: hidden; }
+
+/* CapsLabel: uppercase caption-caps in ink-secondary, 0.44px tracking. */
+.rx-caps-label {
+  font: var(--font-caption);
+  letter-spacing: var(--rx-caps-tracking);
+  color: var(--rx-ink-secondary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* CardHead: caption left, at most one control right, control-height row. */
+.rx-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+}
+.rx-card-head > .rx-spacer { flex: 1 1 auto; min-width: var(--space-2); }
+
+.rx-hint-text {
+  font: var(--font-axis);
+  color: var(--rx-ink-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rx-help-text {
+  font: var(--font-help);
+  color: var(--rx-ink-secondary);
+}
+.rx-help-text--error { color: var(--rx-danger); }
+
+.rx-hairline {
+  background: var(--rx-hairline);
+  height: 1px;
+  border: 0;
+  margin: 0;
+}
+.rx-hairline--vertical { height: auto; width: 1px; align-self: stretch; }
+
+.rx-key-hint {
+  font: 500 11px var(--rx-font-ui);
+  color: var(--rx-ink-secondary);
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--rx-surface-sunken);
+}
+
+/* ============================================================
+ * Controls.swift — every control is 28pt tall
+ * ========================================================== */
+
+.rx-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--control-height);
+  padding: 0 14px;
+  border-radius: 999px;                  /* Capsule */
+  border: 0;
+  font: 500 13px var(--rx-font-ui);      /* medium for bordered/plain */
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  transition: background var(--rx-quick), color var(--rx-quick),
+    transform var(--rx-quick), opacity var(--rx-quick);
+  -webkit-font-smoothing: antialiased;
+}
+.rx-button:active { transform: scale(0.97); }
+.rx-button[disabled], .rx-button:disabled { opacity: 0.4; pointer-events: none; }
+
+.rx-button--small {
+  height: var(--small-control-height);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.rx-button--icon-only { padding: 0; width: var(--control-height); }
+.rx-button--icon-only.rx-button--small { width: var(--small-control-height); }
+.rx-button--icon-only svg { width: 14px; height: 14px; }
+
+/* bordered: surface fill, 1px control-border; hover deepens to 7%. */
+.rx-button--bordered {
+  background: var(--rx-surface);
+  color: var(--rx-ink);
+  box-shadow: inset 0 0 0 1px var(--rx-control-border);
+}
+.rx-button--bordered:hover { background: color-mix(in srgb, var(--rx-ink) 7%, var(--rx-surface)); }
+.rx-button--bordered:active { background: color-mix(in srgb, var(--rx-ink) 12%, var(--rx-surface)); }
+
+/* primary: accent fill; one per view at most. Semibold. */
+.rx-button--primary {
+  background: var(--rx-accent);
+  color: var(--rx-on-accent);
+  font-weight: 600;
+}
+.rx-button--primary:hover { background: color-mix(in srgb, var(--rx-accent) 90%, var(--rx-ink)); }
+
+/* danger: destructive confirmation only. */
+.rx-button--danger {
+  background: var(--rx-danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* plain: toolbar text actions, no chrome. */
+.rx-button--plain {
+  background: transparent;
+  color: var(--rx-ink-secondary);
+  padding: 0 8px;
+}
+.rx-button--plain:hover { color: var(--rx-ink); background: rgba(127, 127, 127, 0.07); }
+
+/* RXField background: radius-lg, 1px control-border, surface fill. */
+.rx-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-height);
+  padding: 0 8px;
+  border-radius: var(--radius-lg);
+  background: var(--rx-surface);
+  box-shadow: inset 0 0 0 1px var(--rx-control-border);
+}
+.rx-field > svg { color: var(--rx-ink-tertiary); }
+.rx-field input,
+.rx-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: var(--font-body);
+  color: var(--rx-ink);
+}
+.rx-field input::placeholder { color: var(--rx-ink-tertiary); }
+.rx-field:focus-within { box-shadow: inset 0 0 0 1px var(--rx-accent), 0 0 0 3px var(--rx-accent-fill); }
+
+/* RXSegmented: sunken track, selected segment in segment-selected. */
+.rx-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--control-height);
+  padding: 2px;
+  border-radius: var(--radius-lg);
+  background: var(--rx-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--rx-control-border);
+}
+.rx-segmented button {
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--rx-ink-secondary);
+  font: 500 12px var(--rx-font-ui);
+  cursor: default;
+  transition: background var(--rx-quick), color var(--rx-quick);
+}
+.rx-segmented button[aria-selected="true"] {
+  background: var(--rx-segment-selected);
+  color: var(--rx-on-segment);
+}
+
+/* RXIconButton: 28pt+4 capsule, primary 6% fill. */
+.rx-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--control-height) + 4px);
+  height: var(--control-height);
+  padding: 0 2px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.06);
+  color: var(--rx-ink-secondary);
+  cursor: default;
+  transition: background var(--rx-quick);
+}
+.rx-icon-button:hover { color: var(--rx-ink); }
+
+/* ============================================================
+ * Status.swift
+ * ========================================================== */
+.rx-status-dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex: none;
+}
+.rx-status-dot--small { width: 6px; height: 6px; }
+.rx-status-dot--regular { width: 8px; height: 8px; }
+.rx-status-dot--large { width: 14px; height: 14px; }
+.rx-status-dot--large.rx-status-dot--success { box-shadow: 0 0 0 6px var(--rx-success-halo); }
+
+.rx-status-dot--success { background: var(--rx-success); }
+.rx-status-dot--running { background: var(--rx-accent); }
+.rx-status-dot--warning { background: var(--rx-warning); }
+.rx-status-dot--danger { background: var(--rx-danger); }
+.rx-status-dot--off { background: var(--rx-ink-tertiary); }
+
+/* RXTag: 20pt pill, radius-sm, caption. */
+.rx-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--rx-surface-sunken);
+  font: var(--font-caption);
+  color: var(--rx-ink-secondary);
+  white-space: nowrap;
+}
+.rx-tag svg { width: 10px; height: 10px; }
+.rx-tag--accent { background: var(--rx-accent-fill); color: var(--rx-accent); }
+.rx-tag--warning { color: var(--rx-warning); }
+
+/* RedactableText: the text becomes a surface-sunken bar its own length. */
+.rx-redactable { position: relative; display: inline-block; }
+.rx-redactable--on { color: transparent; }
+.rx-redactable--on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--rx-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--rx-hairline);
+  transition: opacity var(--rx-quick);
+}
+
+/* SymbolTile: an SF Symbol on a soft tile (snippets, recents). */
+.rx-symbol-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-lg);
+  background: var(--rx-accent-fill);
+  color: var(--rx-accent);
+  flex: none;
+}
+.rx-symbol-tile svg { width: 15px; height: 15px; }
+.rx-symbol-tile--plain { background: var(--rx-surface-sunken); color: var(--rx-ink-secondary); }
+
+/* ============================================================
+ * Charts.swift
+ * ========================================================== */
+
+/* rxUsageColor: warning at 75%, danger at 90%. */
+.rx-usage--base { background: var(--rx-accent); }
+.rx-usage--warning { background: var(--rx-warning); }
+.rx-usage--danger { background: var(--rx-danger); }
+
+/* UsageBar: 6pt rounded track on surface-sunken, segments 2pt apart. */
+.rx-usage-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--rx-surface-sunken);
+  overflow: hidden;
+  width: 100%;
+}
+.rx-usage-bar > span {
+  display: block;
+  height: 100%;
+  flex: none;
+  border-radius: 3px;
+  transition: width var(--rx-arrive);
+}
+
+/* SplitBar: segmented 20pt bar (memory used / cache / free), 4pt gaps. */
+.rx-split-bar {
+  display: flex;
+  gap: 4px;
+  height: 20px;
+  width: 100%;
+}
+.rx-split-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width var(--rx-arrive);
+}
+
+/* Sparkline: filled path + stroked line. */
+.rx-sparkline { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* RXProgressBar. */
+.rx-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rx-surface-sunken);
+  overflow: hidden;
+  width: 100%;
+}
+.rx-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--rx-arrive);
+}
+
+/* CoreTile: one per CPU core, caption-sized. */
+.rx-core-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: var(--rx-surface-sunken);
+  min-width: 0;
+}
+.rx-core-tile__name {
+  font: var(--font-axis);
+  color: var(--rx-ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.rx-core-tile__value {
+  font: 600 12px var(--rx-font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink);
+}
+
+.rx-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 12px var(--rx-font-ui);
+  color: var(--rx-ink-secondary);
+  white-space: nowrap;
+}
+.rx-legend-item__swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.rx-legend-item__value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink);
+}
+
+/* ============================================================
+ * Form.swift
+ * ========================================================== */
+
+/* RXDividedStack: rows separated by hairlines, never a trailing one. */
+.rx-divided-stack > * + * { border-top: 1px solid var(--rx-hairline); }
+
+/* RXFormRow: label left, control right, 56pt minimum. */
+.rx-form-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--form-row-min-height);
+  padding: var(--space-2) 0;
+}
+.rx-form-row__labels { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rx-form-row__title { font: var(--font-body); color: var(--rx-ink); }
+.rx-form-row__control { flex: none; }
+
+.rx-section-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+}
+.rx-section-title-row .rx-spacer { flex: 1 1 auto; }
+
+/* SwitchRow + RXSlider. */
+.rx-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--rx-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--rx-control-border);
+  border: 0;
+  cursor: default;
+  transition: background var(--rx-quick);
+  flex: none;
+}
+.rx-switch--on { background: var(--rx-accent); box-shadow: none; }
+.rx-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--rx-quick);
+}
+.rx-switch--on::after { transform: translateX(14px); }
+
+.rx-slider { display: flex; align-items: center; gap: var(--space-3); }
+.rx-slider input[type="range"] { width: 160px; accent-color: var(--rx-accent); }
+
+/* ============================================================
+ * Page.swift
+ * ========================================================== */
+.rx-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6) 48px var(--space-6);
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rx-page-title-row { display: flex; align-items: baseline; gap: var(--space-3); }
+.rx-page-title { font: var(--font-page-title); color: var(--rx-ink); margin: 0; }
+
+.rx-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--rx-ink-secondary);
+  text-align: center;
+}
+
+.rx-code-block {
+  font: var(--font-code);
+  background: var(--rx-terminal-bg);
+  color: var(--rx-terminal-fg);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  overflow: auto;
+  white-space: pre;
+}
+
+.rx-table-header-label {
+  font: var(--font-caption);
+  letter-spacing: var(--rx-caps-tracking);
+  text-transform: uppercase;
+  color: var(--rx-ink-secondary);
+}
+
+.rx-table-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--table-header-height);
+  font: var(--font-body);
+  color: var(--rx-ink-secondary);
+}
+
+/* SheetScaffold + ProgressHUD. */
+.rx-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--rx-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.rx-sheet {
+  background: var(--rx-surface);
+  border-radius: var(--radius-card);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  min-width: 420px;
+  max-width: 760px;
+  overflow: hidden;
+}
+.rx-sheet__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+}
+.rx-sheet__body { padding: 0 var(--space-6); }
+.rx-sheet__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.rx-progress-hud {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--rx-surface) 88%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--rx-card-shadow);
+  font: var(--font-body);
+  color: var(--rx-ink-secondary);
+}
+
+/* ============================================================
+ * Layout.swift
+ * ========================================================== */
+.rx-flow { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.rx-stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
+.rx-stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
+.rx-stack-3 { display: flex; flex-direction: column; gap: var(--space-3); }
+.rx-stack-4 { display: flex; flex-direction: column; gap: var(--space-4); }
+.rx-row-2 { display: flex; align-items: center; gap: var(--space-2); }
+.rx-row-3 { display: flex; align-items: center; gap: var(--space-3); }
+.rx-spacer { flex: 1 1 auto; }
+
+/* ============================================================
+ * Shell — the window chrome shared by every page
+ * macOS visual-effect background: light 0xEEF0F5, dark 0x1B1C1F
+ * ========================================================== */
+.rx-window {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  height: 100vh;
+  background: var(--rx-window);
+  color: var(--rx-ink);
+  overflow: hidden;
+}
+
+.rx-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  gap: 2px;
+  border-right: 0.5px solid var(--rx-hairline);
+  background: color-mix(in srgb, var(--rx-window) 92%, var(--rx-surface));
+  -webkit-app-region: drag;
+}
+
+.rx-sidebar__traffic { display: flex; gap: 8px; padding: 2px 4px var(--space-4); -webkit-app-region: no-drag; }
+.rx-traffic-light { width: 12px; height: 12px; border-radius: 50%; }
+.rx-traffic-light--close { background: #ff5f57; }
+.rx-traffic-light--min { background: #febc2e; }
+.rx-traffic-light--max { background: #28c840; }
+
+.rx-sidebar__section {
+  font: var(--font-section-label);
+  color: var(--rx-ink-secondary);
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+
+.rx-sidebar__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--rx-ink);
+  font: 500 14px var(--rx-font-ui);
+  text-decoration: none;
+  -webkit-app-region: no-drag;
+  transition: background var(--rx-quick);
+}
+.rx-sidebar__row > svg { width: 17px; height: 17px; color: var(--rx-ink); }
+.rx-sidebar__row:hover { background: var(--rx-row-hover); }
+.rx-sidebar__row--selected { background: var(--rx-sidebar-selected); }
+.rx-sidebar__count {
+  margin-left: auto;
+  font: var(--font-axis);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink-tertiary);
+}
+
+.rx-sidebar__footer { margin-top: auto; }
+
+/* Content column */
+.rx-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: auto;
+}
+
+.rx-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 var(--space-6);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--rx-window) 86%, transparent);
+  backdrop-filter: blur(20px);
+}
+.rx-toolbar .rx-spacer { flex: 1 1 auto; }
+.rx-toolbar__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  background: var(--rx-pill);
+  font: var(--font-body);
+  color: var(--rx-ink);
+}
+.rx-toolbar__pill svg { width: 14px; height: 14px; }
+.rx-toolbar__pill .rx-toolbar__divider {
+  width: 1px;
+  height: 14px;
+  background: color-mix(in srgb, var(--rx-ink) 14%, transparent);
+}
+.rx-toolbar .rx-field { width: 220px; }
+
+/*
+ * Table — ServersView.swift uses fixed column widths, not a CSS table with
+ * auto layout: address 150, identity 110, cpu 110, lastUsed 120, actions 220,
+ * name taking the rest, with 12pt horizontal padding and 40pt rows.
+ */
+.rx-table { display: flex; flex-direction: column; }
+.rx-table__row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 var(--space-3);
+  min-height: var(--table-row-height);
+  border-radius: var(--radius-lg);
+  transition: background var(--rx-quick);
+}
+.rx-table__row--head { min-height: var(--table-header-height); }
+.rx-table__row--head .rx-table__cell {
+  font: var(--font-caption);
+  letter-spacing: var(--rx-caps-tracking);
+  text-transform: uppercase;
+  color: var(--rx-ink-secondary);
+  font-weight: 500;
+}
+.rx-table__row--body { cursor: default; }
+.rx-table__row--body:hover { background: var(--rx-row-hover); }
+.rx-table__row--selected { background: var(--rx-row-selected); }
+
+/* Fixed columns keep their measured width; only the name column flexes. */
+.rx-table__cell { flex: none; }
+
+/*
+ * The name column needs a floor, not just min-width: 0: the fixed columns sum to
+ * 710px + 24px padding, so a narrower window would otherwise hand the name 0px
+ * and the row would render as "ADDRESS | IDENTITY | ..." with no server in it.
+ * ServerColumns in ServersView.swift solves the same problem by hiding trailing
+ * columns; the CSS keeps a 120px floor so the grid never collapses.
+ */
+.rx-table__cell--name {
+  flex: 1 1 0;
+  min-width: 120px;
+  overflow: hidden;
+}
+.rx-table__cell--name > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/*
+ * ServerColumns(width:) in ServersView.swift drops columns from the right as the
+ * window narrows, rather than squeezing the name: CPU above 584px of table
+ * width, Identity above 694, Last used above 814. Container queries are the
+ * CSS equivalent, and the numbers are the Swift thresholds.
+ */
+.rx-table { container-type: inline-size; }
+@container (max-width: 694px) {
+  .rx-table__cell--cpu { display: none; }
+}
+@container (max-width: 584px) {
+  .rx-table__cell--identity { display: none; }
+}
+@container (max-width: 814px) {
+  .rx-table__cell--last-used { display: none; }
+}
+
+.rx-table__cell--address { width: 150px; }
+.rx-table__cell--identity { width: 110px; }
+.rx-table__cell--cpu { width: 110px; }
+.rx-table__cell--last-used { width: 120px; }
+.rx-table__cell--actions {
+  width: 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* An empty header cell must not reserve the 220px actions gutter. */
+.rx-table__cell--actions:empty {
+  width: 0;
+  padding: 0;
+}
+.rx-table__sub { font: var(--font-help); color: var(--rx-ink-tertiary); margin-top: 1px; }
+.rx-table__mono { font-variant-numeric: tabular-nums; }
+.rx-table__cpu { display: flex; align-items: center; gap: var(--space-2); }
+.rx-table__cpu .rx-usage-bar { width: 48px; }
+
+/* Group header row: caption in body size, count pinned right. */
+.rx-table__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--table-header-height);
+  padding: 10px var(--space-3) 0;
+  font: var(--font-body);
+  color: var(--rx-ink-secondary);
+}
+.rx-table__group .rx-spacer { flex: 1 1 auto; }
+.rx-table__group .rx-axis { color: var(--rx-ink-tertiary); }
+
+/* Home grid */
+.rx-home-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 68px;
+  padding: 0 var(--space-6);
+  border-radius: 999px;
+  background: var(--rx-surface);
+  box-shadow: var(--rx-card-shadow), inset 0 0 0 0.5px var(--rx-hairline);
+  margin: var(--space-6) auto var(--space-4);
+  width: min(720px, 100%);
+}
+.rx-home-search > svg { width: 22px; height: 22px; color: var(--rx-ink-secondary); }
+.rx-home-search input {
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: 400 22px var(--rx-font-mono);
+  color: var(--rx-ink);
+}
+.rx-home-search input::placeholder { color: var(--rx-ink-tertiary); }
+.rx-home-search .rx-icon-button {
+  width: 32px;
+  height: 32px;
+  background: color-mix(in srgb, var(--rx-accent) 14%, transparent);
+  color: var(--rx-accent);
+}
+.rx-home-search .rx-icon-button svg { width: 15px; height: 15px; }
+
+.rx-server-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.rx-server-card { display: flex; flex-direction: column; gap: var(--space-3); }
+.rx-server-card__name { font: 700 15px var(--rx-font-ui); color: var(--rx-ink); }
+.rx-server-card__address { font: 400 12px var(--rx-font-ui); color: var(--rx-ink-secondary); margin-top: 2px; }
+.rx-server-card__meta { display: flex; flex-direction: column; gap: 6px; }
+.rx-server-card__meta-row { display: flex; align-items: center; gap: var(--space-2); }
+.rx-server-card__meta-row .rx-spacer { flex: 1 1 auto; }
+.rx-server-card__meta-value { font: 400 12px var(--rx-font-ui); color: var(--rx-ink-secondary); }
+.rx-server-card__actions { display: flex; align-items: center; gap: var(--space-2); }
+.rx-server-card__actions .rx-spacer { flex: 1 1 auto; }
+
+.rx-new-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 180px;
+  border-radius: var(--radius-card);
+  border: 1.5px dashed color-mix(in srgb, var(--rx-ink) 22%, transparent);
+  color: var(--rx-ink-secondary);
+  font: var(--font-body);
+  background: transparent;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+.rx-new-card > svg { width: 18px; height: 18px; color: var(--rx-ink-secondary); }
+.rx-new-card:hover { background: var(--rx-row-hover); }
+
+/* ---- Sheet title and toast ------------------------------------------- */
+
+.rx-sheet__title { font: var(--font-sheet-title); color: var(--rx-ink); }
+
+/* One-line message for something not built yet; dismisses itself. */
+.rx-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-6);
+  transform: translateX(-50%);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-card);
+  background: var(--rx-surface);
+  color: var(--rx-ink);
+  font: var(--font-body);
+  box-shadow: var(--rx-card-shadow), inset 0 0 0 0.5px var(--rx-hairline);
+  z-index: 60;
+  animation: rx-toast-in var(--rx-arrive) both;
+}
+@keyframes rx-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
