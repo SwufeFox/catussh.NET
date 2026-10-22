@@ -129,3 +129,5 @@ obj/
 _src/
 # Publish output, rebuilt by CI or `dotnet publish -p:PublishProfile=win-x64`.
 /dist/
+
+.alma-snapshots/

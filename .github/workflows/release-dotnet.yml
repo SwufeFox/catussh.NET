@@ -1,0 +1,37 @@
+name: release-dotnet
+
+on:
+  push:
+    tags: ["dotnet-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: echo "num=$($env:GITHUB_REF_NAME -replace '^dotnet-v','')" >> $env:GITHUB_OUTPUT
+
+      - name: Publish exe
+        run: dotnet publish src/Catussh.App -p:PublishProfile=win-x64 /p:Version=${{ steps.ver.outputs.num }} --nologo
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/catusshNET-win-x64 -DestinationPath catusshNET-win-x64.zip
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: catusshNET-win-x64.zip
+          generate_release_notes: true
