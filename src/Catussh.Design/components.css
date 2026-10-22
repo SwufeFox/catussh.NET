@@ -827,3 +827,27 @@ svg { width: 13px; height: 13px; flex: none; display: block; }
 }
 .rx-new-card > svg { width: 18px; height: 18px; color: var(--rx-ink-secondary); }
 .rx-new-card:hover { background: var(--rx-row-hover); }
+
+/* ---- Sheet title and toast ------------------------------------------- */
+
+.rx-sheet__title { font: var(--font-sheet-title); color: var(--rx-ink); }
+
+/* One-line message for something not built yet; dismisses itself. */
+.rx-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-6);
+  transform: translateX(-50%);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-card);
+  background: var(--rx-surface);
+  color: var(--rx-ink);
+  font: var(--font-body);
+  box-shadow: var(--rx-card-shadow), inset 0 0 0 0.5px var(--rx-hairline);
+  z-index: 60;
+  animation: rx-toast-in var(--rx-arrive) both;
+}
+@keyframes rx-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

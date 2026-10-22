@@ -18,7 +18,11 @@ internal static class MonitorPayload
 
     /// <param name="address">Demo target for the Facts row; null renders as "—".</param>
     public static string Build(ServerStatus status, MonitorHistory history, string? address = null) =>
-        JsonSerializer.Serialize(new
+        JsonSerializer.Serialize(Shape(status, history, address), Options);
+
+    /// <summary>The same projection as a plain object, for the API to serialize inline.</summary>
+    public static object Shape(ServerStatus status, MonitorHistory history, string? address = null) =>
+        new
         {
             status = new
             {
@@ -121,5 +125,5 @@ internal static class MonitorPayload
                 cpu = history.Cpu,
                 memory = history.Memory,
             },
-        }, Options);
+        };
 }

@@ -1,4 +1,6 @@
 using Catussh.Core.Machine;
+using Catussh.Core.Store;
+using Catussh.Core.Utils;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using System.Runtime.Versioning;
@@ -67,13 +69,13 @@ internal sealed class MainWindow : Form
         _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "catussh.local", designRoot, CoreWebView2HostResourceAccessKind.Allow);
 
-        // The Monitor page's data comes from MonitorBridge (loopback HTTP), not
-        // from request interception: virtual-host-mapped requests never reach
-        // the network stack, so WebResourceRequested never fires for this app
-        // (verified with a "*" + Document filter: zero events, even for the
-        // document itself). The folder mapping only serves static design files.
-        _bridge = new MonitorBridge();
-        _bridge.Start();
+        // Data comes from ApiServer (loopback HTTP), not from request interception:
+        // virtual-host-mapped requests never reach the network stack, so
+        // WebResourceRequested never fires for this app (verified with a "*" +
+        // Document filter: zero events, even for the document itself). The folder
+        // mapping only serves the static design files.
+        _api = new ApiServer(_store, _knownHosts);
+        _api.Start();
 
         // Navigation must not reuse a cached copy of the design files: iterating on
         // the CSS and relaunching would otherwise show the previous stylesheet.
@@ -95,7 +97,7 @@ internal sealed class MainWindow : Form
         // Query carries both the appearance and the bridge port; the page reads
         // them from location.search (the hash form #page?theme= stays supported
         // for static screenshots without a host).
-        var query = _startDark ? $"?theme=dark&bridge={_bridge.Port}" : $"?bridge={_bridge.Port}";
+        var query = _startDark ? $"?theme=dark&api={_api.Port}" : $"?api={_api.Port}";
         _webView.CoreWebView2.Navigate($"https://catussh.local/index.html{query}#{_startPage}");
 
         if (_screenshotPath is not null)
@@ -155,13 +157,15 @@ internal sealed class MainWindow : Form
             Path.GetDirectoryName(path) ?? "",
             Path.GetFileNameWithoutExtension(path) + suffix + Path.GetExtension(path));
 
-    /// <summary>Loopback HTTP bridge serving the snapshot; see <see cref="MonitorBridge"/>.</summary>
-    private MonitorBridge? _bridge;
+    /// <summary>Saved servers, identities and live monitor sessions.</summary>
+    private readonly CatusshStore _store = new();
+    private readonly KnownHosts _knownHosts = KnownHosts.Shared;
+    private ApiServer? _api;
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _bridge?.Dispose();
-        _bridge = null;
+        _api?.Dispose();
+        _api = null;
         base.OnFormClosed(e);
     }
 

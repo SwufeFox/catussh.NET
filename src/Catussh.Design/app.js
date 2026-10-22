@@ -58,8 +58,8 @@ const portForwards = [
 
 const pages = [
   { id: "home", label: "Home", icon: "home" },
-  { id: "servers", label: "Servers", icon: "servers", count: servers.length },
-  { id: "identities", label: "Identities", icon: "identities", count: 1 },
+  { id: "servers", label: "Servers", icon: "servers", count: () => allMachines().length },
+  { id: "identities", label: "Identities", icon: "identities", count: () => (state.identities ?? []).length },
   { id: "snippets", label: "Snippets", icon: "snippets" },
   { id: "portforward", label: "Port Forward", icon: "portforward" },
 ];
@@ -67,12 +67,27 @@ const pages = [
 const state = {
   page: "home",
   dark: false,
-  // Monitor page: the last reading from the host, its error, and the two
-  // toggles the Swift cards keep in @State.
+
+  // Saved state from the host: null means "not loaded yet", not "empty". The
+  // distinction matters — an empty list should say "no servers yet", not blink.
+  machines: null,
+  machinesError: null,
+  identities: null,
+  identitiesError: null,
+
+  // Monitor page: the session's phase, its last error, the latest reading and
+  // the two toggles the Swift cards keep in @State.
   monitor: null,
   monitorError: null,
+  monitorPhase: null,
   monitorCores: false,
   monitorSwap: false,
+  monitorMachineId: null,
+
+  // A pending dialog: "add-server" | "add-identity" | null.
+  sheet: null,
+  sheetError: null,
+  quickConnectValue: "",
 };
 
 /* ---------------------------------------------------------------- shell */
@@ -89,12 +104,15 @@ function sidebar() {
         .map((p, index) => {
           const selected = p.id === state.page;
           const separator = index === 1 ? `<div class="rx-sidebar__section">Manage</div>` : "";
+          // Counts come from the loaded state, not from a literal: the sidebar is
+          // how a person checks that adding a server actually saved it.
+          const count = typeof p.count === "function" ? p.count() : p.count;
           return `${separator}
           <a class="rx-sidebar__row${selected ? " rx-sidebar__row--selected" : ""}"
              href="#${p.id}" data-nav="${p.id}">
             ${icons[p.icon]}
             <span>${p.label}</span>
-            ${p.count ? `<span class="rx-sidebar__count">${p.count}</span>` : ""}
+            ${count ? `<span class="rx-sidebar__count">${count}</span>` : ""}
           </a>`;
         })
         .join("")}
@@ -110,96 +128,168 @@ function toolbar(leading, trailing) {
   return `<header class="rx-toolbar">${leading || ""}<span class="rx-spacer"></span>${trailing || ""}</header>`;
 }
 
-const primaryButton = (label, icon = icons.plus, small = false) =>
-  `<button class="rx-button rx-button--primary${small ? " rx-button--small" : ""}">${icon}${label}</button>`;
+const primaryButton = (label, icon = icons.plus, small = false, attributes = "") =>
+  `<button class="rx-button rx-button--primary${small ? " rx-button--small" : ""}" ${attributes}>${icon}${label}</button>`;
 
 const borderedButton = (label, icon = "", small = false, attributes = "") =>
   `<button class="rx-button rx-button--bordered${small ? " rx-button--small" : ""}" ${attributes}>${icon}${label}</button>`;
 
-const plainButton = (label, icon = "") =>
-  `<button class="rx-button rx-button--plain${icon ? "" : ""}">${icon}${label}</button>`;
+const plainButton = (label, icon = "", attributes = "") =>
+  `<button class="rx-button rx-button--plain" ${attributes}>${icon}${label}</button>`;
 
-const iconButton = (icon) => `<button class="rx-icon-button" aria-label="More">${icon}</button>`;
+const iconButton = (icon, attributes = "", label = "More") =>
+  `<button class="rx-icon-button" aria-label="${label}" ${attributes}>${icon}</button>`;
+
+/* ---------------------------------------------------------------- pages */
+
+/**
+ * Relative time for the "last used" column: the Swift used
+ * RelativeDateTimeFormatter with .full / .named, so this follows the same shape.
+ */
+function relativeTime(iso) {
+  if (!iso) return "Never";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "Never";
+  if (when.getFullYear() < 1980) return "Never";
+
+  const seconds = Math.round((Date.now() - when.getTime()) / 1000);
+  if (seconds < 60) return "Now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes + (minutes === 1 ? " minute ago" : " minutes ago");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+  const days = Math.round(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 30) return days + " days ago";
+  const months = Math.round(days / 30);
+  if (months < 12) return months + (months === 1 ? " month ago" : " months ago");
+  const years = Math.round(months / 12);
+  return years + (years === 1 ? " year ago" : " years ago");
+}
+
+/** The demo servers the first run starts with, used for the fixture-only preview. */
+function demoMachines() {
+  return [
+    { id: "demo-1", name: "web-01", address: "203.0.113.10", port: 22, group: "Production", comment: "nginx · edge", identity: "Automatic", lastConnection: new Date(Date.now() - 120000).toISOString() },
+    { id: "demo-2", name: "web-02", address: "203.0.113.11", port: 22, group: "Production", comment: "nginx · edge", identity: "Automatic", lastConnection: new Date(Date.now() - 60000).toISOString() },
+    { id: "demo-3", name: "db-primary", address: "198.51.100.20", port: 22, group: "Production", comment: "PostgreSQL 16", identity: "Automatic", lastConnection: new Date(Date.now() - 120000).toISOString() },
+    { id: "demo-4", name: "build-runner", address: "ci.example.com", port: 22, group: "CI", comment: "GitHub Actions runner", identity: "Automatic", lastConnection: new Date(Date.now() - 60000).toISOString() },
+    { id: "demo-5", name: "homelab-pi", address: "192.0.2.50", port: 22, group: "Home Lab", comment: "Raspberry Pi 5", identity: "Automatic", lastConnection: new Date(Date.now() - 60000).toISOString() },
+  ];
+}
+
+/** Every saved server, flattened, with the fixture standing in for a host-less preview. */
+function allMachines() {
+  if (state.machines === null) return demoMachines();
+  const flat = [];
+  for (const group of state.machines) {
+    for (const item of group.items) flat.push({ ...item, group: group.group });
+  }
+  return flat;
+}
+
+function machinesByGroup() {
+  const flat = allMachines();
+  const groups = new Map();
+  for (const machine of flat) {
+    const key = machine.group || "Ungrouped";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(machine);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([group, items]) => ({ group, items }));
+}
 
 /* ---------------------------------------------------------------- pages */
 
 function homePage() {
-  const cards = homeServers
+  const recent = [...allMachines()]
+    .sort((a, b) => new Date(b.lastConnection || 0) - new Date(a.lastConnection || 0))
+    .slice(0, 5);
+
+  const cards = recent
     .map(
       (s) => `
       <div class="rx-card rx-server-card">
         <div>
-          <div class="rx-server-card__name">${s.name}</div>
-          <div class="rx-server-card__address">${s.address}</div>
+          <div class="rx-server-card__name">${escapeHtml(s.name)}</div>
+          <div class="rx-server-card__address">${escapeHtml(s.address)}</div>
         </div>
         <div class="rx-server-card__meta">
           <div class="rx-server-card__meta-row">
             <span class="rx-caps-label">Last used</span>
             <span class="rx-spacer"></span>
-            <span class="rx-server-card__meta-value">${s.lastUsed}</span>
+            <span class="rx-server-card__meta-value">${relativeTime(s.lastConnection)}</span>
           </div>
           <div class="rx-server-card__meta-row">
             <span class="rx-caps-label">Identity</span>
             <span class="rx-spacer"></span>
-            <span class="rx-server-card__meta-value">Automatic</span>
+            <span class="rx-server-card__meta-value">${escapeHtml(s.identity || "Automatic")}</span>
           </div>
         </div>
         <div class="rx-server-card__actions">
-          ${primaryButton("Connect", icons.terminal, true)}
-          ${borderedButton("Files", icons.files, true)}
-          ${borderedButton("Monitor", icons.monitor, true, "data-open-monitor")}
-          ${iconButton(icons.more)}
+          ${primaryButton("Connect", icons.terminal, true, `data-connect="${s.id}"`)}
+          ${borderedButton("Files", icons.files, true, `data-files="${s.id}"`)}
+          ${borderedButton("Monitor", icons.monitor, true, `data-monitor="${s.id}"`)}
+          ${iconButton(icons.more, `data-remove="${s.id}"`, "Remove server")}
         </div>
       </div>`
     )
     .join("");
 
+  const empty = recent.length === 0;
+
   return `
-    ${toolbar(`<span class="rx-spacer"></span>`, primaryButton("New Server"))}
+    ${toolbar(`<h1 class="rx-page-title" style="font-size:17px">Home</h1>`, primaryButton("New Server", icons.plus, false, "data-new-server"))}
     <div class="rx-page" style="padding-top: 0;">
-      <label class="rx-home-search">
+      <form class="rx-home-search" data-quick-connect>
         ${icons.terminal}
-        <input placeholder="user@host:22" spellcheck="false" />
-        <button class="rx-icon-button" style="opacity:.45">${icons.plus}</button>
-      </label>
+        <input name="target" placeholder="user@host:22" spellcheck="false" autocomplete="off"
+               value="${escapeHtml(state.quickConnectValue)}" />
+        <button class="rx-icon-button" type="submit" aria-label="Connect">${icons.plus}</button>
+      </form>
+      ${state.quickConnectError ? `<div class="rx-help-text rx-help-text--error" style="text-align:center">${escapeHtml(state.quickConnectError)}</div>` : ""}
       <div class="rx-section-title-row">
         <span class="rx-section-title">Servers</span>
-        <span class="rx-hint-text">${homeServers.length}</span>
+        <span class="rx-hint-text">${recent.length}</span>
         <span class="rx-spacer"></span>
-        ${plainButton("Show All")}
+        ${recent.length > 0 ? plainButton("Show All", "", "data-show-all") : ""}
       </div>
-      <div class="rx-server-grid">
-        ${cards}
-        <button class="rx-new-card">${icons.plus}<span>New Server</span></button>
-      </div>
+      ${empty
+        ? `<div class="rx-card rx-empty-state">
+             <span class="rx-section-title">No servers yet</span>
+             <span class="rx-help-text">Type user@host above, or add one with New Server.</span>
+           </div>`
+        : `<div class="rx-server-grid">
+             ${cards}
+             <button class="rx-new-card" data-new-server>${icons.plus}<span>New Server</span></button>
+           </div>`}
     </div>`;
 }
 
 function serversPage() {
-  const groups = [
-    { name: "CI", items: servers.filter((s) => s.group === "CI") },
-    { name: "Home Lab", items: servers.filter((s) => s.group === "Home Lab") },
-    { name: "Production", items: servers.filter((s) => s.group === "Production") },
-  ];
+  const groups = machinesByGroup();
+  const empty = groups.length === 0;
 
   const row = (s) => `
-    <div class="rx-table__row rx-table__row--body" data-server="${s.name}">
+    <div class="rx-table__row rx-table__row--body" data-server="${s.id}">
       <div class="rx-table__cell rx-table__cell--name">
-        <div class="rx-body">${s.name}</div>
-        <div class="rx-table__sub">${s.note}</div>
+        <div class="rx-body">${escapeHtml(s.name)}</div>
+        <div class="rx-table__sub">${escapeHtml(s.comment || "")}</div>
       </div>
-      <div class="rx-table__cell rx-table__cell--address rx-table__mono rx-body">${s.address}</div>
+      <div class="rx-table__cell rx-table__cell--address rx-table__mono rx-body">${escapeHtml(s.address)}${s.port && s.port !== 22 ? ":" + s.port : ""}</div>
       <div class="rx-table__cell rx-table__cell--identity rx-body"
-           style="color:var(--rx-ink-secondary)">${s.identity}</div>
+           style="color:var(--rx-ink-secondary)">${escapeHtml(s.identity || "Automatic")}</div>
       <div class="rx-table__cell rx-table__cell--cpu rx-table__cpu">
-        <span class="rx-body rx-table__mono" style="color:var(--rx-ink-secondary)">${s.cpu}</span>
+        <span class="rx-body rx-table__mono" style="color:var(--rx-ink-secondary)">—</span>
       </div>
       <div class="rx-table__cell rx-table__cell--last-used rx-body"
-           style="color:var(--rx-ink-secondary)">${s.lastUsed}</div>
+           style="color:var(--rx-ink-secondary)">${relativeTime(s.lastConnection)}</div>
       <div class="rx-table__cell rx-table__cell--actions">
-        ${borderedButton("Files", "", true)}
-        ${borderedButton("Monitor", "", true, "data-open-monitor")}
-        ${borderedButton("Connect", "", true)}
+        ${borderedButton("Files", "", true, `data-files="${s.id}"`)}
+        ${borderedButton("Monitor", "", true, `data-monitor="${s.id}"`)}
+        ${borderedButton("Connect", "", true, `data-connect="${s.id}"`)}
       </div>
     </div>`;
 
@@ -207,7 +297,7 @@ function serversPage() {
     .map(
       (g) => `
       <div class="rx-table__group">
-        <span>${g.name}</span><span class="rx-spacer"></span>
+        <span>${escapeHtml(g.group)}</span><span class="rx-spacer"></span>
         <span class="rx-axis">${g.items.length}</span>
       </div>
       ${g.items.map(row).join("")}`
@@ -217,55 +307,75 @@ function serversPage() {
   return `
     ${toolbar(
       "",
-      `<div class="rx-toolbar__pill">${icons.eye}<span>Privacy</span>
-         <span class="rx-toolbar__divider"></span>
-         ${icons.windows}<span>Open Terminals…</span>
-       </div>
-       ${primaryButton("New Server")}
+      `${primaryButton("New Server", icons.plus, false, "data-new-server")}
        <label class="rx-field">${icons.search}
-         <input placeholder="Search servers" />
+         <input placeholder="Search servers" data-search-servers />
        </label>`
     )}
     <div class="rx-page">
       <div class="rx-page-title-row"><h1 class="rx-page-title">Servers</h1></div>
-      <div class="rx-card" style="padding: var(--space-2);">
-        <div class="rx-table">
-          <div class="rx-table__row rx-table__row--head rx-table__row--body">
-            <div class="rx-table__cell rx-table__cell--name">Name</div>
-            <div class="rx-table__cell rx-table__cell--address">Address</div>
-            <div class="rx-table__cell rx-table__cell--identity">Identity</div>
-            <div class="rx-table__cell rx-table__cell--cpu">CPU</div>
-            <div class="rx-table__cell rx-table__cell--last-used">Last used</div>
-            <div class="rx-table__cell rx-table__cell--actions"></div>
-          </div>
-          ${body}
-        </div>
-      </div>
+      ${state.machinesError
+        ? `<div class="rx-card rx-empty-state">
+             <span class="rx-section-title">Can't read the saved servers</span>
+             <span class="rx-help-text rx-help-text--error">${escapeHtml(state.machinesError)}</span>
+           </div>`
+        : empty
+        ? `<div class="rx-card rx-empty-state">
+             <span class="rx-section-title">No servers yet</span>
+             <span class="rx-help-text">Add one with New Server.</span>
+           </div>`
+        : `<div class="rx-card" style="padding: var(--space-2);">
+             <div class="rx-table">
+               <div class="rx-table__row rx-table__row--head">
+                 <div class="rx-table__cell rx-table__cell--name">Name</div>
+                 <div class="rx-table__cell rx-table__cell--address">Address</div>
+                 <div class="rx-table__cell rx-table__cell--identity">Identity</div>
+                 <div class="rx-table__cell rx-table__cell--cpu">CPU</div>
+                 <div class="rx-table__cell rx-table__cell--last-used">Last used</div>
+                 <div class="rx-table__cell rx-table__cell--actions"></div>
+               </div>
+               ${body}
+             </div>
+           </div>`}
     </div>`;
 }
 
 function identitiesPage() {
+  const list = state.identities === null ? [] : state.identities;
+
+  const rows = list
+    .map(
+      (i) => `
+      <div style="display:flex;align-items:center;gap:12px;height:56px;padding:0 16px;">
+        <span class="rx-symbol-tile">${icons.identities}</span>
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+          <span class="rx-body">${escapeHtml(i.username)}</span>
+          <span class="rx-help" style="color:var(--rx-ink-tertiary)">${escapeHtml(i.keyType)}${i.automatic ? " · automatic" : ""}</span>
+        </div>
+        <span class="rx-spacer"></span>
+        ${i.hasSecret ? "" : `<span class="rx-tag rx-tag--warning">no secret</span>`}
+        ${plainButton("Remove", "", `data-remove-identity="${i.id}"`)}
+      </div>`
+    )
+    .join("");
+
   return `
-    ${toolbar("", primaryButton("New Identity"))}
+    ${toolbar("", primaryButton("New Identity", icons.plus, false, "data-new-identity"))}
     <div class="rx-page">
       <div class="rx-page-title-row"><h1 class="rx-page-title">Identities</h1></div>
-      <div class="rx-card rx-card--chrome">
-        <div class="rx-divided-stack">
-          <div style="display:flex;align-items:center;gap:12px;height:56px;padding:0 16px;">
-            <span class="rx-symbol-tile">${icons.identities}</span>
-            <div style="display:flex;flex-direction:column;gap:2px;">
-              <span class="rx-body">ignored</span>
-              <span class="rx-help" style="color:var(--rx-ink-tertiary)">Automatic · password</span>
-            </div>
-            <span class="rx-spacer"></span>
-            <span class="rx-tag">1 server</span>
-            ${plainButton("Edit")}
-          </div>
-        </div>
-      </div>
-      <div class="rx-help-text" style="text-align:center;color:var(--rx-ink-tertiary)">
-        Identities (passwords or keys) are shared across servers.
-      </div>
+      ${state.identitiesError
+        ? `<div class="rx-card rx-empty-state">
+             <span class="rx-section-title">Can't read the saved identities</span>
+             <span class="rx-help-text rx-help-text--error">${escapeHtml(state.identitiesError)}</span>
+           </div>`
+        : list.length === 0
+        ? `<div class="rx-card rx-empty-state">
+             <span class="rx-section-title">No identities yet</span>
+             <span class="rx-help-text">Add a password or key with New Identity. Servers set to Automatic try these in turn.</span>
+           </div>`
+        : `<div class="rx-card rx-card--chrome">
+             <div class="rx-divided-stack">${rows}</div>
+           </div>`}
     </div>`;
 }
 
@@ -379,7 +489,8 @@ function render() {
     <div class="rx-window">
       ${sidebar()}
       <main class="rx-content">${page()}</main>
-    </div>`;
+    </div>
+    ${sheetMarkup()}`;
 
   // Toggles and the monitor's refresh timer are per-render, not per-page-lifetime.
   if (state.page === "monitor") {
@@ -417,16 +528,20 @@ function stopMonitorPolling() {
 
 async function refreshMonitor() {
   if (state.page !== "monitor") return;
-  const payload = await loadMonitorSnapshot();
-  if (!payload) {
-    if (state.monitor === null) {
-      state.monitorError = "No reading available.";
-      render();
-    }
-    return;
-  }
-  state.monitor = payload;
-  state.monitorError = null;
+
+  const result = await loadMonitorSnapshot();
+  if (!result) return;
+
+  state.monitorPhase = result.phase ?? "failed";
+  state.monitorError = result.error ?? null;
+  state.monitorAttempts = result.attempts ?? [];
+  if (result.payload) state.monitor = result.payload;
+
+  // A session that has not produced a reading yet is worth polling faster than the
+  // steady-state refresh, so the placeholder turns into data on the first probe
+  // rather than after a full interval.
+  const waiting = state.monitorPhase === "connecting";
+
   // Re-render in place: the page is a pure function of the snapshot.
   const content = document.getElementById("app");
   const scroller = content.querySelector(".rx-content");
@@ -434,6 +549,8 @@ async function refreshMonitor() {
   render();
   const next = content.querySelector(".rx-content");
   if (next) next.scrollTop = scrollTop;
+
+  if (waiting) setTimeout(refreshMonitor, 400);
 }
 
 document.addEventListener("click", (event) => {
@@ -444,19 +561,330 @@ document.addEventListener("click", (event) => {
     history.replaceState(null, "", `#${nav.dataset.nav}`);
     return;
   }
+
   if (event.target.closest("[data-toggle-dark]")) {
     state.dark = !state.dark;
     render();
     return;
   }
 
-  // Every server's "Monitor" button opens the monitor session, the way
-  // ServerTool.monitor.show(machine) does in the Swift app.
-  if (event.target.closest("[data-open-monitor]")) {
+  // Monitor: start (or reattach to) that server's live session, then show the
+  // page. This is ServerTool.monitor.show(machine) in the Swift app.
+  const monitorTarget = event.target.closest("[data-monitor]");
+  if (monitorTarget) {
     event.preventDefault();
-    setPage("monitor");
+    openMonitor(monitorTarget.dataset.monitor);
+    return;
+  }
+
+  // Connect and Files need the SSH session too; Monitor is the page that exists,
+  // so Connect opens it as well rather than pretending to do something.
+  const connectTarget = event.target.closest("[data-connect]");
+  if (connectTarget) {
+    event.preventDefault();
+    openMonitor(connectTarget.dataset.connect);
+    return;
+  }
+
+  const filesTarget = event.target.closest("[data-files]");
+  if (filesTarget) {
+    event.preventDefault();
+    toast("File transfer is not built yet.");
+    return;
+  }
+
+  if (event.target.closest("[data-show-all]")) {
+    event.preventDefault();
+    setPage("servers");
+    return;
+  }
+
+  if (event.target.closest("[data-new-server]")) {
+    event.preventDefault();
+    openSheet("add-server");
+    return;
+  }
+
+  if (event.target.closest("[data-new-identity]")) {
+    event.preventDefault();
+    openSheet("add-identity");
+    return;
+  }
+
+  const removeServer = event.target.closest("[data-remove]");
+  if (removeServer) {
+    event.preventDefault();
+    removeServer(removeServer.dataset.remove);
+    return;
+  }
+
+  const removeIdentity = event.target.closest("[data-remove-identity]");
+  if (removeIdentity) {
+    event.preventDefault();
+    removeSavedIdentity(removeIdentity.dataset.removeIdentity);
+    return;
+  }
+
+  if (event.target.closest("[data-close-sheet]")) {
+    event.preventDefault();
+    closeSheet();
+    return;
+  }
+
+  // Clicking the scrim (outside the sheet) dismisses it.
+  if (event.target.classList?.contains("rx-scrim")) {
+    closeSheet();
   }
 });
+
+/* ------------------------------------------------------------ quick connect */
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-quick-connect]");
+  if (!form) return;
+  event.preventDefault();
+
+  const value = new FormData(form).get("target")?.toString().trim() ?? "";
+  if (!value) return;
+
+  if (!Api.available) {
+    state.quickConnectError = "Quick Connect needs the desktop app.";
+    render();
+    return;
+  }
+
+  // The host parses user@host:port and saves it, then the monitor page opens
+  // against whatever it just created.
+  const created = await Api.addMachine({ quickConnect: value });
+  if (!created || created.error) {
+    state.quickConnectError = created?.error ?? "Could not add that server.";
+    render();
+    return;
+  }
+
+  state.quickConnectError = null;
+  state.quickConnectValue = "";
+  await loadMachines();
+  openMonitor(created.id);
+});
+
+/* ------------------------------------------------------------ sheets */
+
+function openSheet(kind) {
+  state.sheet = kind;
+  state.sheetError = null;
+  render();
+}
+
+/* ------------------------------------------------------------ data loading */
+
+/** Loads the saved servers. Failure is shown, not swallowed. */
+async function loadMachines() {
+  if (!Api.available) {
+    state.machines = null;
+    state.machinesError = null;
+    render();
+    return;
+  }
+  const result = await Api.machines();
+  if (!result || result.error) {
+    state.machinesError = result?.error ?? "Could not reach the host.";
+    state.machines = [];
+  } else {
+    state.machines = result.machines ?? [];
+    state.machinesError = result.loadFailed ? result.loadError : null;
+  }
+  render();
+}
+
+async function loadIdentities() {
+  if (!Api.available) {
+    state.identities = null;
+    state.identitiesError = null;
+    render();
+    return;
+  }
+  const result = await Api.identities();
+  if (!result || result.error) {
+    state.identitiesError = result?.error ?? "Could not reach the host.";
+    state.identities = [];
+  } else {
+    state.identities = Array.isArray(result) ? result : [];
+    state.identitiesError = null;
+  }
+  render();
+}
+
+async function removeServer(id) {
+  if (!Api.available) return;
+  await Api.removeMachine(id);
+  await loadMachines();
+}
+
+async function removeSavedIdentity(id) {
+  if (!Api.available) return;
+  await Api.removeIdentity(id);
+  await loadIdentities();
+}
+
+/** Opens a server's monitor: starts the session, then shows the page. */
+async function openMonitor(machineId) {
+  state.monitorMachineId = machineId ?? null;
+  state.monitor = null;
+  state.monitorError = null;
+  state.monitorPhase = "connecting";
+  setPage("monitor");
+  if (Api.available && machineId) {
+    await Api.startMonitor(machineId);
+    refreshMonitor();
+  } else {
+    refreshMonitor();
+  }
+}
+
+/** A one-line message in the corner; used where a feature is not built yet. */
+function toast(message) {
+  const existing = document.querySelector(".rx-toast");
+  if (existing) existing.remove();
+  const node = document.createElement("div");
+  node.className = "rx-toast";
+  node.textContent = message;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 2600);
+}
+
+/* ------------------------------------------------------------ form submits */
+
+document.addEventListener("submit", async (event) => {
+  const addServer = event.target.closest("[data-add-server]");
+  if (addServer) {
+    event.preventDefault();
+    const data = new FormData(addServer);
+    const result = await Api.addMachine({
+      name: data.get("name")?.toString() ?? "",
+      address: data.get("address")?.toString() ?? "",
+      port: data.get("port")?.toString() || "22",
+      group: data.get("group")?.toString() ?? "",
+      comment: data.get("comment")?.toString() ?? "",
+    });
+    if (!result || result.error) {
+      state.sheetError = result?.error ?? "Could not save that server.";
+      render();
+      return;
+    }
+    closeSheet();
+    await loadMachines();
+    return;
+  }
+
+  const addIdentity = event.target.closest("[data-add-identity]");
+  if (addIdentity) {
+    event.preventDefault();
+    const data = new FormData(addIdentity);
+    const username = data.get("username")?.toString().trim() ?? "";
+    const password = data.get("password")?.toString() ?? "";
+    const privateKey = data.get("privateKey")?.toString() ?? "";
+    if (!username) {
+      state.sheetError = "A username is required.";
+      render();
+      return;
+    }
+    if (!password && !privateKey) {
+      state.sheetError = "Give it a password or a private key.";
+      render();
+      return;
+    }
+    const result = await Api.addIdentity({
+      username,
+      password,
+      privateKey,
+      passphrase: data.get("passphrase")?.toString() ?? "",
+      automatic: data.get("automatic") === "on",
+    });
+    if (!result || result.error) {
+      state.sheetError = result?.error ?? "Could not save that identity.";
+      render();
+      return;
+    }
+    closeSheet();
+    await loadIdentities();
+    return;
+  }
+});
+
+function closeSheet() {
+  state.sheet = null;
+  state.sheetError = null;
+  render();
+}
+
+function sheetMarkup() {
+  if (!state.sheet) return "";
+
+  const error = state.sheetError
+    ? `<div class="rx-help-text rx-help-text--error" style="margin-bottom:var(--space-2)">${escapeHtml(state.sheetError)}</div>`
+    : "";
+
+  if (state.sheet === "add-server") {
+    return `<div class="rx-scrim">
+      <form class="rx-sheet" data-add-server>
+        <div class="rx-sheet__head">
+          <span class="rx-sheet__title">New Server</span>
+          <span class="rx-help-text">Give it an address, and a name if you like.</span>
+        </div>
+        <div class="rx-sheet__body rx-stack-3">
+          ${error}
+          <label class="rx-stack-1"><span class="rx-caps-label">Name</span>
+            <span class="rx-field"><input name="name" placeholder="web-01" autocomplete="off" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Address</span>
+            <span class="rx-field"><input name="address" placeholder="203.0.113.10" required autocomplete="off" /></span></label>
+          <div class="rx-row-3">
+            <label class="rx-stack-1" style="width:110px"><span class="rx-caps-label">Port</span>
+              <span class="rx-field"><input name="port" value="22" inputmode="numeric" /></span></label>
+            <label class="rx-stack-1" style="flex:1"><span class="rx-caps-label">Group</span>
+              <span class="rx-field"><input name="group" placeholder="Production" autocomplete="off" /></span></label>
+          </div>
+          <label class="rx-stack-1"><span class="rx-caps-label">Note</span>
+            <span class="rx-field"><input name="comment" placeholder="What runs here" autocomplete="off" /></span></label>
+        </div>
+        <div class="rx-sheet__footer">
+          <button type="button" class="rx-button rx-button--plain" data-close-sheet>Cancel</button>
+          <button type="submit" class="rx-button rx-button--primary">Add Server</button>
+        </div>
+      </form>
+    </div>`;
+  }
+
+  return `<div class="rx-scrim">
+      <form class="rx-sheet" data-add-identity>
+        <div class="rx-sheet__head">
+          <span class="rx-sheet__title">New Identity</span>
+          <span class="rx-help-text">A password or a private key. Stored protected by your Windows account.</span>
+        </div>
+        <div class="rx-sheet__body rx-stack-3">
+          ${error}
+          <label class="rx-stack-1"><span class="rx-caps-label">Username</span>
+            <span class="rx-field"><input name="username" placeholder="root" required autocomplete="off" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Password</span>
+            <span class="rx-field"><input name="password" type="password" autocomplete="new-password" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Private key</span>
+            <span class="rx-field" style="height:auto;padding:8px"><textarea name="privateKey" rows="5" spellcheck="false"
+              style="border:0;outline:0;background:transparent;font:var(--font-code);color:var(--rx-ink);resize:vertical;width:100%"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Key passphrase</span>
+            <span class="rx-field"><input name="passphrase" type="password" autocomplete="new-password" /></span></label>
+          <label class="rx-row-2" style="gap:8px">
+            <input type="checkbox" name="automatic" checked />
+            <span class="rx-body">Offer this identity to servers set to Automatic</span>
+          </label>
+        </div>
+        <div class="rx-sheet__footer">
+          <button type="button" class="rx-button rx-button--plain" data-close-sheet>Cancel</button>
+          <button type="submit" class="rx-button rx-button--primary">Add Identity</button>
+        </div>
+      </form>
+    </div>`;
+}
 
 window.addEventListener("hashchange", () => {
   loadRoute();
@@ -489,3 +917,8 @@ function loadRoute() {
 
 loadRoute();
 render();
+
+// Pull the saved state once at start-up; the pages render their empty states
+// while it is in flight, which is what a real client does.
+loadMachines();
+loadIdentities();

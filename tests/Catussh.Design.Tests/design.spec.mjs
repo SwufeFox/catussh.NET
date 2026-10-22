@@ -14,13 +14,10 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
-// In a real fork the Swift sources are in the tree, so the check runs against the
-// same commit as the CSS. _src/ is the fallback for a checkout that only has the
-// .NET side.
-const swiftTokens = [
-  join(root, "Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift"),
-  join(root, "_src/Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift"),
-].find((p) => existsSync(p));
+// The port owns this repository; the Swift original is not in the tree. _src/ is a
+// local read-only checkout kept for comparison, and the token parity check is
+// skipped (loudly) when it is absent.
+const swiftTokens = join(root, "_src/Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift");
 const cssTokens = join(root, "src/Catussh.Design/tokens.css");
 
 let failures = 0;

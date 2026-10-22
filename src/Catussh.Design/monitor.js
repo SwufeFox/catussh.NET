@@ -456,21 +456,40 @@ function monitorDashboard(status, totals, history, state) {
  */
 function monitorPage(state) {
   const payload = state.monitor;
+  const phase = state.monitorPhase ?? (payload ? "connected" : "connecting");
+
+  const title = payload
+    ? payload.status.system.hostname || "Server"
+    : machineName(state.monitorMachineId) || "Server";
+
+  // The phase the original only sketched: connecting, failed (with the reason and
+  // what was tried), lost (stale data still on screen), and the demo reading.
+  const badge = {
+    connected: "",
+    connecting: `<span class="rx-tag">connecting…</span>`,
+    demo: `<span class="rx-tag">demo data</span>`,
+    lost: `<span class="rx-tag rx-tag--warning">connection lost</span>`,
+    failed: `<span class="rx-tag rx-tag--warning">can't connect</span>`,
+    closed: `<span class="rx-tag">closed</span>`,
+  }[phase] ?? "";
+
   const header = payload
     ? `<div class="rx-stack-4" style="margin-bottom:var(--space-5)">
-         <h1 class="rx-page-title">${escapeHtml(payload.status.system.hostname || "Server")}</h1>
+         <div class="rx-row-3"><h1 class="rx-page-title">${escapeHtml(title)}</h1>${badge}</div>
          ${monitorFacts(payload.status)}
        </div>`
-    : `<h1 class="rx-page-title" style="margin-bottom:var(--space-5)">Server</h1>`;
+    : `<div class="rx-row-3" style="margin-bottom:var(--space-5)">
+         <h1 class="rx-page-title">${escapeHtml(title)}</h1>${badge}
+       </div>`;
 
   const body = payload
-    ? monitorDashboard(payload.status, payload.totals, payload.history, state)
-    : `<div class="rx-card rx-monitor-placeholder">
-         ${state.monitorError
-           ? `<span style="font: var(--font-sheet-title);color:var(--rx-ink)">Can't connect</span>
-              <span class="rx-help-text">${escapeHtml(state.monitorError)}</span>`
-           : `<div class="rx-spinner"></div><span>Connecting…</span>`}
-       </div>`;
+    ? `${phase === "lost"
+        ? `<div class="rx-help-text rx-help-text--error" style="margin-bottom:var(--space-3)">
+             ${escapeHtml(state.monitorError || "The connection dropped. Showing the last reading.")}
+           </div>`
+        : ""}
+       ${monitorDashboard(payload.status, payload.totals, payload.history, state)}`
+    : placeholder(state, phase);
 
   return `${toolbar(
     "",
@@ -480,6 +499,61 @@ function monitorPage(state) {
   <div class="rx-page" style="padding-top:0">
     ${header}
     ${body}
+  </div>`;
+}
+
+/** The saved server's name, for the title before the first reading arrives. */
+function machineName(id) {
+  if (!id) return null;
+  for (const group of state.machines ?? []) {
+    for (const item of group.items) if (item.id === id) return item.name;
+  }
+  return null;
+}
+
+/**
+ * What the page shows before there is a reading. The original left this as one
+ * generic card; a real client needs to say which failure it is, and what to do.
+ */
+function placeholder(state, phase) {
+  if (phase === "failed") {
+    const attempts = state.monitorAttempts ?? [];
+    const tried = attempts.length > 1
+      ? `<div class="rx-stack-1" style="margin-top:var(--space-3);text-align:left">
+           <span class="rx-caps-label">Tried</span>
+           ${attempts
+             .map(
+               (a) => `<div class="rx-row-2 rx-help-text">
+                 <span>${escapeHtml(a.credential)}</span>
+                 <span class="rx-spacer"></span>
+                 <span class="${a.succeeded ? "" : "rx-help-text--error"}">${a.succeeded ? "ok" : escapeHtml(a.error || "refused")}</span>
+               </div>`
+             )
+             .join("")}
+         </div>`
+      : "";
+
+    return `<div class="rx-card rx-monitor-placeholder">
+      <span class="rx-section-title">Can't connect</span>
+      <span class="rx-help-text">${escapeHtml(state.monitorError || "The server did not answer.")}</span>
+      ${tried}
+      <div class="rx-row-2" style="margin-top:var(--space-4)">
+        <button class="rx-button rx-button--primary rx-button--small" data-monitor-retry>Try Again</button>
+        <button class="rx-button rx-button--plain" data-monitor-action="identities">Add Identity</button>
+      </div>
+    </div>`;
+  }
+
+  if (phase === "closed") {
+    return `<div class="rx-card rx-monitor-placeholder">
+      <span class="rx-section-title">Monitor closed</span>
+      <span class="rx-help-text">Reopen it from the server's Monitor button.</span>
+    </div>`;
+  }
+
+  return `<div class="rx-card rx-monitor-placeholder">
+    <div class="rx-spinner"></div>
+    <span>Connecting…</span>
   </div>`;
 }
 
@@ -499,7 +573,16 @@ function mountMonitor(root) {
   });
   root.querySelectorAll("[data-monitor-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.monitorAction === "close") setPage("servers");
+      const action = button.dataset.monitorAction;
+      if (action === "close") setPage("servers");
+      if (action === "identities") setPage("identities");
+    });
+  });
+
+  // Retry re-asks the host to (re)start the session for this server.
+  root.querySelectorAll("[data-monitor-retry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (state.monitorMachineId) openMonitor(state.monitorMachineId);
     });
   });
 }
@@ -510,20 +593,34 @@ function mountMonitor(root) {
  * falls back to the baked fixture, and to null when even that is missing.
  */
 async function loadMonitorSnapshot() {
-  const bridge = new URLSearchParams(location.search).get("bridge");
-  if (bridge !== null && /^\d+$/.test(bridge)) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${bridge}/monitor-snapshot`, { cache: "no-store" });
-      if (response.ok) return await response.json();
-    } catch {
-      // Fall through to the static fixture.
+  // A real server: the host runs the SSH probe for this machine and reports the
+  // session's phase alongside the reading, so the page can tell "connecting" from
+  // "authentication failed" from "lost the connection".
+  if (state.monitorMachineId && Api.available) {
+    const session = await Api.monitor(state.monitorMachineId);
+    if (!session || session.error) {
+      return { phase: "failed", error: session?.error ?? "Could not reach the host.", payload: null };
     }
+    return {
+      phase: session.phase,
+      error: session.error,
+      attempts: session.attempts ?? [],
+      payload: session.payload,
+    };
   }
+
+  // No saved server (or no host): the built-in demo reading, so the layout still
+  // has something to show. It is labelled as demo in the placeholder header.
+  if (Api.available) {
+    const demo = await Api.demoMonitor();
+    if (demo && !demo.error) return { phase: "demo", error: null, payload: demo };
+  }
+
   try {
     const response = await fetch("monitor-fixture.json", { cache: "no-store" });
-    if (!response.ok) return null;
-    return await response.json();
+    if (!response.ok) return { phase: "failed", error: "No reading available.", payload: null };
+    return { phase: "demo", error: null, payload: await response.json() };
   } catch {
-    return null;
+    return { phase: "failed", error: "No reading available.", payload: null };
   }
 }
