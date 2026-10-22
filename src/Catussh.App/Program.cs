@@ -16,9 +16,10 @@ internal static class Program
         // NSApp.appearance; the design system has both palettes.
         var dark = ReadSystemUsesDarkTheme();
 
-        // catussh [--page <name>] [--dark|--light] [--screenshot <path>]
+        // catussh [--page <name>] [--dark|--light] [--screenshot <path>] [--dump-snapshot]
         var page = "home";
         string? screenshot = null;
+        var dumpSnapshot = false;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -35,7 +36,28 @@ internal static class Program
                 case "--screenshot" when i + 1 < args.Length:
                     screenshot = args[++i];
                     break;
+                case "--dump-snapshot":
+                    dumpSnapshot = true;
+                    break;
             }
+        }
+
+        // Writes the exact document the WebView2 bridge serves, so the design
+        // preview can be generated from the real parser output instead of a
+        // hand-maintained copy. Used by tools/gen-monitor-fixture.mjs.
+        if (dumpSnapshot)
+        {
+            // Same helper the live bridge serves, so the baked fixture and the
+            // window show the same server.
+            var history = new Core.Machine.MonitorHistory();
+            Core.Machine.ServerStatus status = MainWindow.DemoSnapshot();
+            for (var i = 0; i < 24; i++)
+            {
+                status = MonitorBridge.SnapshotAt(i);
+                history.Record(status);
+            }
+            Console.Out.Write(MonitorPayload.Build(status, history, MonitorBridge.DemoAddress));
+            return;
         }
 
         Application.Run(new MainWindow(startDark: dark, startPage: page, screenshotPath: screenshot));

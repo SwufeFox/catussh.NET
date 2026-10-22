@@ -64,7 +64,16 @@ const pages = [
   { id: "portforward", label: "Port Forward", icon: "portforward" },
 ];
 
-const state = { page: "home", dark: false };
+const state = {
+  page: "home",
+  dark: false,
+  // Monitor page: the last reading from the host, its error, and the two
+  // toggles the Swift cards keep in @State.
+  monitor: null,
+  monitorError: null,
+  monitorCores: false,
+  monitorSwap: false,
+};
 
 /* ---------------------------------------------------------------- shell */
 
@@ -104,8 +113,8 @@ function toolbar(leading, trailing) {
 const primaryButton = (label, icon = icons.plus, small = false) =>
   `<button class="rx-button rx-button--primary${small ? " rx-button--small" : ""}">${icon}${label}</button>`;
 
-const borderedButton = (label, icon = "", small = false) =>
-  `<button class="rx-button rx-button--bordered${small ? " rx-button--small" : ""}">${icon}${label}</button>`;
+const borderedButton = (label, icon = "", small = false, attributes = "") =>
+  `<button class="rx-button rx-button--bordered${small ? " rx-button--small" : ""}" ${attributes}>${icon}${label}</button>`;
 
 const plainButton = (label, icon = "") =>
   `<button class="rx-button rx-button--plain${icon ? "" : ""}">${icon}${label}</button>`;
@@ -138,7 +147,7 @@ function homePage() {
         <div class="rx-server-card__actions">
           ${primaryButton("Connect", icons.terminal, true)}
           ${borderedButton("Files", icons.files, true)}
-          ${borderedButton("Monitor", icons.monitor, true)}
+          ${borderedButton("Monitor", icons.monitor, true, "data-open-monitor")}
           ${iconButton(icons.more)}
         </div>
       </div>`
@@ -189,7 +198,7 @@ function serversPage() {
            style="color:var(--rx-ink-secondary)">${s.lastUsed}</div>
       <div class="rx-table__cell rx-table__cell--actions">
         ${borderedButton("Files", "", true)}
-        ${borderedButton("Monitor", "", true)}
+        ${borderedButton("Monitor", "", true, "data-open-monitor")}
         ${borderedButton("Connect", "", true)}
       </div>
     </div>`;
@@ -345,6 +354,11 @@ function settingsPage() {
     </div>`;
 }
 
+/*
+ * Monitor is not a sidebar entry: in the Swift app it is a session you open from
+ * a server's Monitor button, and the sidebar keeps the Server group. It is
+ * reachable by hash (#monitor) and from the per-server buttons.
+ */
 const renderers = {
   home: homePage,
   servers: serversPage,
@@ -352,6 +366,7 @@ const renderers = {
   snippets: snippetsPage,
   portforward: portForwardPage,
   settings: settingsPage,
+  monitor: () => monitorPage(state),
 };
 
 /* ---------------------------------------------------------------- router */
@@ -359,16 +374,66 @@ const renderers = {
 function render() {
   document.documentElement.classList.toggle("dark", state.dark);
   const page = renderers[state.page] || homePage;
-  document.getElementById("app").innerHTML = `
+  const content = document.getElementById("app");
+  content.innerHTML = `
     <div class="rx-window">
       ${sidebar()}
       <main class="rx-content">${page()}</main>
     </div>`;
+
+  // Toggles and the monitor's refresh timer are per-render, not per-page-lifetime.
+  if (state.page === "monitor") {
+    mountMonitor(content);
+    ensureMonitorPolling();
+    // Direct navigation (#monitor on load) never goes through setPage, so the
+    // first reading would otherwise wait a full polling interval.
+    if (state.monitor === null) refreshMonitor();
+  } else {
+    stopMonitorPolling();
+  }
 }
 
 function setPage(id) {
   state.page = id;
   render();
+  if (id === "monitor") refreshMonitor();
+}
+
+/* ------------------------------------------------------- monitor wiring */
+
+let monitorTimer = null;
+
+/** The monitor refreshes once a second, the cadence of the merged probe's sleep. */
+function ensureMonitorPolling() {
+  if (monitorTimer !== null) return;
+  monitorTimer = setInterval(refreshMonitor, 1000);
+}
+
+function stopMonitorPolling() {
+  if (monitorTimer === null) return;
+  clearInterval(monitorTimer);
+  monitorTimer = null;
+}
+
+async function refreshMonitor() {
+  if (state.page !== "monitor") return;
+  const payload = await loadMonitorSnapshot();
+  if (!payload) {
+    if (state.monitor === null) {
+      state.monitorError = "No reading available.";
+      render();
+    }
+    return;
+  }
+  state.monitor = payload;
+  state.monitorError = null;
+  // Re-render in place: the page is a pure function of the snapshot.
+  const content = document.getElementById("app");
+  const scroller = content.querySelector(".rx-content");
+  const scrollTop = scroller ? scroller.scrollTop : 0;
+  render();
+  const next = content.querySelector(".rx-content");
+  if (next) next.scrollTop = scrollTop;
 }
 
 document.addEventListener("click", (event) => {
@@ -382,6 +447,14 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-toggle-dark]")) {
     state.dark = !state.dark;
     render();
+    return;
+  }
+
+  // Every server's "Monitor" button opens the monitor session, the way
+  // ServerTool.monitor.show(machine) does in the Swift app.
+  if (event.target.closest("[data-open-monitor]")) {
+    event.preventDefault();
+    setPage("monitor");
   }
 });
 
@@ -400,14 +473,18 @@ window.rxSetDark = (dark) => {
 /*
  * `#servers?theme=dark` opens a page with the dark palette already applied, so
  * a screenshot can capture either appearance without clicking anything. The
- * shell uses window.rxSetDark() instead.
+ * shell passes the same params in location.search (?theme=&bridge=) because the
+ * hash is reserved for the page; both feed the same params, hash wins.
  */
 function loadRoute() {
-  const [page, query] = (location.hash.slice(1) || "home").split("?");
+  const [page, hashQuery] = (location.hash.slice(1) || "home").split("?");
   state.page = renderers[page] ? page : "home";
-  for (const [key, value] of new URLSearchParams(query || "")) {
-    if (key === "theme") state.dark = value === "dark";
+  const params = new URLSearchParams(location.search);
+  for (const [key, value] of new URLSearchParams(hashQuery || "")) {
+    params.set(key, value);
   }
+  const theme = params.get("theme");
+  if (theme !== null) state.dark = theme === "dark";
 }
 
 loadRoute();

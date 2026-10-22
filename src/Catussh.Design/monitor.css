@@ -1,0 +1,233 @@
+/*
+ * monitor.css — the Monitor page.
+ *
+ * Port of Foundation/MachineStatusView/Sources/MachineStatusView/{MonitorDashboard,
+ * MonitorCards}.swift. Layout rule from MonitorDashboard.swift: two columns when
+ * there is room (Load, Processor, Memory, Disks | Receive+Transmit, Network,
+ * Graphics), one column below 760pt.
+ *
+ * Each card "answers one question with one large number", so the metric line is
+ * always rxMetricXL (32pt semibold, tabular) with a 13pt unit beside it.
+ */
+
+.rx-monitor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+@container monitor (max-width: 760px) { /* fallback below; see @media */ }
+
+@media (max-width: 1040px) {
+  .rx-monitor { grid-template-columns: 1fr; }
+}
+
+.rx-monitor__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ---- Metric.swift: MetricView + SubMetricRow ---------------------------- */
+
+.rx-metric {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.rx-metric__value {
+  font: var(--font-metric-xl);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink);
+  transition: color var(--rx-arrive);
+}
+.rx-metric__unit {
+  font: var(--font-unit);
+  color: var(--rx-ink-secondary);
+}
+
+/* Sub-metrics split by hairlines, space-5 below the headline metric. */
+.rx-submetrics {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+.rx-submetrics > * + * {
+  border-left: 1px solid var(--rx-hairline);
+  padding-left: var(--space-4);
+}
+.rx-label-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.rx-label-metric__label { display: flex; align-items: center; gap: 6px; }
+.rx-label-metric__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.rx-label-metric__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.rx-label-metric__value .rx-metric__value { font: var(--font-metric-md); }
+.rx-label-metric__value .rx-metric__unit { font: 400 11px var(--rx-font-ui); }
+.rx-label-metric__value > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- UsageListRow ------------------------------------------------------ */
+.rx-usage-row { display: flex; flex-direction: column; gap: 6px; }
+.rx-usage-row__head { display: flex; align-items: baseline; gap: var(--space-2); }
+.rx-usage-row__name {
+  font: var(--font-code);
+  color: var(--rx-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  /* truncationMode(.middle): keep both ends of a long mount point visible */
+  direction: ltr;
+}
+.rx-usage-row__head .rx-spacer { flex: 1 1 auto; }
+.rx-usage-row__value {
+  font: 600 12px var(--rx-font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink);
+  white-space: nowrap;
+}
+.rx-usage-row__detail {
+  font: 400 12px var(--rx-font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink-secondary);
+  white-space: nowrap;
+}
+.rx-usage-row__list { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-2); }
+
+/* ---- CoreGrid ---------------------------------------------------------- */
+.rx-core-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: var(--space-4);
+}
+.rx-core-grid--dense {
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+}
+.rx-core-tile--grid {
+  height: 44px;
+  justify-content: center;
+  padding: 0 6px;
+  position: relative;
+  overflow: hidden;
+}
+.rx-core-grid--dense .rx-core-tile--grid { height: 28px; }
+/* The fill is a bottom-anchored tint so the number stays legible at any use. */
+.rx-core-tile__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--rx-accent-fill);
+  transition: height var(--rx-arrive);
+}
+.rx-core-tile--grid > *:not(.rx-core-tile__fill) { position: relative; z-index: 1; }
+
+/* ---- Throughput cards -------------------------------------------------- */
+.rx-card--throughput {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.rx-card--throughput .rx-card-head {
+  padding: var(--space-4) var(--space-4) 0;
+}
+.rx-card--throughput .rx-metric {
+  padding: var(--space-1) var(--space-4) 0;
+}
+.rx-card--throughput .rx-sparkline {
+  height: 84px;          /* height * 0.42 of the 200pt card */
+  margin-top: var(--space-2);
+  display: block;
+  width: 100%;
+}
+
+/* ---- Facts row under the page title ------------------------------------ */
+.rx-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+}
+.rx-fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rx-fact__value {
+  font: var(--font-body);
+  color: var(--rx-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rx-fact__value--mono {
+  font: var(--font-code);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Graphics ---------------------------------------------------------- */
+.rx-gpu-row { display: flex; flex-direction: column; gap: 6px; }
+.rx-gpu-row__head { display: flex; align-items: baseline; gap: var(--space-2); }
+.rx-gpu-row__head .rx-spacer { flex: 1 1 auto; }
+.rx-gpu-row__fan {
+  font: 400 12px var(--rx-font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink-secondary);
+}
+.rx-gpu-bar { display: flex; align-items: center; gap: var(--space-2); }
+.rx-gpu-bar > .rx-caps-label { width: 40px; flex: none; }
+.rx-gpu-bar > .rx-usage-bar { flex: 1 1 auto; }
+.rx-gpu-bar > .rx-gpu-bar__value {
+  width: 40px;
+  flex: none;
+  text-align: right;
+  font: 600 12px var(--rx-font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--rx-ink);
+}
+
+/* ---- Placeholder / spinner --------------------------------------------- */
+.rx-monitor-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  min-height: 220px;
+  color: var(--rx-ink-secondary);
+  font: var(--font-body);
+}
+.rx-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--rx-hairline);
+  border-top-color: var(--rx-accent);
+  animation: rx-spin 0.8s linear infinite;
+}
+@keyframes rx-spin { to { transform: rotate(360deg); } }
+
+/* Arrival: cards rise 8pt and fade, staggered like .rxRise in Motion.swift. */
+.rx-rise { animation: rx-rise var(--rx-arrive) both; }
+@keyframes rx-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}

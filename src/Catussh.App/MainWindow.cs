@@ -2,7 +2,6 @@ using Catussh.Core.Machine;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using System.Runtime.Versioning;
-using System.Text.Json;
 
 namespace Catussh.App;
 
@@ -68,9 +67,13 @@ internal sealed class MainWindow : Form
         _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "catussh.local", designRoot, CoreWebView2HostResourceAccessKind.Allow);
 
-        _webView.CoreWebView2.AddWebResourceRequestedFilter(
-            "https://catussh.local/monitor-snapshot*", CoreWebView2WebResourceContext.All);
-        _webView.CoreWebView2.WebResourceRequested += OnWebResourceRequested;
+        // The Monitor page's data comes from MonitorBridge (loopback HTTP), not
+        // from request interception: virtual-host-mapped requests never reach
+        // the network stack, so WebResourceRequested never fires for this app
+        // (verified with a "*" + Document filter: zero events, even for the
+        // document itself). The folder mapping only serves static design files.
+        _bridge = new MonitorBridge();
+        _bridge.Start();
 
         // Navigation must not reuse a cached copy of the design files: iterating on
         // the CSS and relaunching would otherwise show the previous stylesheet.
@@ -89,16 +92,41 @@ internal sealed class MainWindow : Form
         await _webView.CoreWebView2.Profile.ClearBrowsingDataAsync(
             CoreWebView2BrowsingDataKinds.DiskCache | CoreWebView2BrowsingDataKinds.CacheStorage);
 
-        var theme = _startDark ? "?theme=dark" : "";
-        _webView.CoreWebView2.Navigate($"https://catussh.local/index.html{theme}#{_startPage}");
+        // Query carries both the appearance and the bridge port; the page reads
+        // them from location.search (the hash form #page?theme= stays supported
+        // for static screenshots without a host).
+        var query = _startDark ? $"?theme=dark&bridge={_bridge.Port}" : $"?bridge={_bridge.Port}";
+        _webView.CoreWebView2.Navigate($"https://catussh.local/index.html{query}#{_startPage}");
 
         if (_screenshotPath is not null)
         {
             _webView.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
-                // Let the first layout and the CSS arrival animation settle.
-                await Task.Delay(600);
-                await CaptureAndCloseAsync(_screenshotPath);
+                try
+                {
+                    // The monitor's first fetch lands within this window; the poller
+                    // keeps refreshing once a second after that.
+                    await Task.Delay(1500);
+                    await CaptureOnceAsync(_screenshotPath);
+
+                    // Long pages (the monitor grid scrolls) get a second frame at
+                    // the bottom so verification is not limited to above the fold.
+                    if (_startPage == "monitor")
+                    {
+                        await _webView.CoreWebView2.ExecuteScriptAsync(
+                            "document.querySelector('.rx-content').scrollTo(0, 999999)");
+                        await Task.Delay(600);
+                        await CaptureOnceAsync(WithSuffix(_screenshotPath, "-below"));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[catussh] screenshot failed: {ex.Message}");
+                }
+                finally
+                {
+                    Close();
+                }
             };
         }
     }
@@ -107,55 +135,41 @@ internal sealed class MainWindow : Form
     /// Headless-ish run used to verify the shell end to end: renders the window
     /// into a PNG and exits. Invoked with <c>--screenshot &lt;path&gt;</c>.
     /// </summary>
-    private async Task CaptureAndCloseAsync(string path)
+    private async Task CaptureOnceAsync(string path)
     {
-        try
+        await using var stream = File.Create(path);
+        await _webView.CoreWebView2.CapturePreviewAsync(
+            CoreWebView2CapturePreviewImageFormat.Png, stream);
+        if (!File.Exists(path) || new FileInfo(path).Length == 0)
         {
-            await using var stream = File.Create(path);
-            await _webView.CoreWebView2.CapturePreviewAsync(
-                CoreWebView2CapturePreviewImageFormat.Png, stream);
-            if (!File.Exists(path) || new FileInfo(path).Length == 0)
-            {
-                // CapturePreviewAsync can hand back an empty frame before first paint;
-                // fall back to a form capture so the run still proves a window rendered.
-                using var bitmap = new Bitmap(_webView.Width, _webView.Height);
-                _webView.DrawToBitmap(bitmap, new Rectangle(0, 0, _webView.Width, _webView.Height));
-                bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[catussh] screenshot failed: {ex.Message}");
-        }
-        finally
-        {
-            Close();
+            // CapturePreviewAsync can hand back an empty frame before first paint;
+            // fall back to a form capture so the run still proves a window rendered.
+            using var bitmap = new Bitmap(_webView.Width, _webView.Height);
+            _webView.DrawToBitmap(bitmap, new Rectangle(0, 0, _webView.Width, _webView.Height));
+            bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
         }
     }
 
-    /// <summary>
-    /// Minimal bridge: <c>GET https://catussh.local/monitor-snapshot</c> answers with a
-    /// ServerStatus snapshot produced by the ported parsers, so the UI can show
-    /// monitor data without a live SSH channel.
-    /// </summary>
-    private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    private static string WithSuffix(string path, string suffix) =>
+        Path.Combine(
+            Path.GetDirectoryName(path) ?? "",
+            Path.GetFileNameWithoutExtension(path) + suffix + Path.GetExtension(path));
+
+    /// <summary>Loopback HTTP bridge serving the snapshot; see <see cref="MonitorBridge"/>.</summary>
+    private MonitorBridge? _bridge;
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        var json = JsonSerializer.Serialize(DemoSnapshot(), new JsonSerializerOptions
-        {
-            WriteIndented = true,
-        });
-        e.Response = _webView.CoreWebView2!.Environment.CreateWebResourceResponse(
-            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)),
-            200,
-            "OK",
-            "Content-Type: application/json");
+        _bridge?.Dispose();
+        _bridge = null;
+        base.OnFormClosed(e);
     }
 
     /// <summary>
     /// Runs the ported monitor script's parsers against captured remote output,
     /// exactly as <see cref="ServerStatus.Apply"/> does after an SSH round-trip.
     /// </summary>
-    private static ServerStatus DemoSnapshot()
+    internal static ServerStatus DemoSnapshot()
     {
         const string merged = """
             <<<CATUSSH-SECTION:platform>>>
@@ -164,10 +178,22 @@ internal sealed class MainWindow : Form
             cpu  100 0 200 1600 50 0 10 0 0 0
             cpu0 50 0 100 800 25 0 5 0 0 0
             cpu1 50 0 100 800 25 0 5 0 0 0
+            <<<CATUSSH-SECTION:net-a>>>
+            Inter-|   Receive                                                |  Transmit
+             face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+                lo: 100000   1000    0    0    0     0          0         0   100000    1000    0    0    0     0       0          0
+              eth0: 5000000   5000    0    0    0     0          0         0  1200000    2000    0    0    0     0       0          0
+              eth1:  200000    200    0    0    0     0          0         0    80000     100    0    0    0     0       0          0
             <<<CATUSSH-SECTION:cpu-b>>>
             cpu  160 0 260 1780 60 0 16 0 0 0
             cpu0 80 0 130 890 30 0 8 0 0 0
             cpu1 80 0 130 890 30 0 8 0 0 0
+            <<<CATUSSH-SECTION:net-b>>>
+            Inter-|   Receive                                                |  Transmit
+             face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+                lo: 101000   1010    0    0    0     0          0         0   101000    1010    0    0    0     0       0          0
+              eth0: 7420800   5100    0    0    0     0          0         0  1400000    2100    0    0    0     0       0          0
+              eth1:  262080    210    0    0    0     0          0         0   148080     110    0    0    0     0       0          0
             <<<CATUSSH-SECTION:mem>>>
             MemTotal:       16384000 kB
             MemFree:         1024000 kB
@@ -190,6 +216,27 @@ internal sealed class MainWindow : Form
             PRETTY_NAME="Ubuntu 24.04 LTS"
             """;
 
-        return new ServerStatus().Apply(merged, graphics: "", includeStatic: true);
+        // A server with a GPU, so the Graphics card has something to draw. This is
+        // the shape nvidia-smi -q -x emits; the parser reads it, not this literal.
+        const string nvidiaSmi = """
+            <nvidia_smi_log>
+            <cuda_version>12.4</cuda_version>
+            <gpu id="00000000:01:00.0">
+              <product_name>NVIDIA GeForce RTX 4090</product_name>
+              <uuid>GPU-8c1f2e4a-77bd-4b1e-9d2a-1f0e5c3b9a71</uuid>
+              <fan_speed>38 %</fan_speed>
+              <fb_memory_usage>
+                <total>24564 MiB</total><used>3182 MiB</used><free>21382 MiB</free>
+              </fb_memory_usage>
+              <utilization>
+                <gpu_util>12 %</gpu_util><memory_util>13 %</memory_util>
+                <encoder_util>0 %</encoder_util><decoder_util>3 %</decoder_util>
+              </utilization>
+              <vbios_version>95.02.18.80.87</vbios_version>
+            </gpu>
+            </nvidia_smi_log>
+            """;
+
+        return new ServerStatus().Apply(merged, graphics: nvidiaSmi, includeStatic: true);
     }
 }
