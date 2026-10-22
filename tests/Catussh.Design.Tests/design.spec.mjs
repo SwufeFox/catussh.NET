@@ -14,7 +14,13 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
-const swiftTokens = join(root, "_src/Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift");
+// In a real fork the Swift sources are in the tree, so the check runs against the
+// same commit as the CSS. _src/ is the fallback for a checkout that only has the
+// .NET side.
+const swiftTokens = [
+  join(root, "Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift"),
+  join(root, "_src/Foundation/CatusshDesign/Sources/CatusshDesign/Tokens.swift"),
+].find((p) => existsSync(p));
 const cssTokens = join(root, "src/Catussh.Design/tokens.css");
 
 let failures = 0;
