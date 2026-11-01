@@ -38,7 +38,174 @@ public sealed record RDMachine
     public string? AssociatedIdentity { get; init; }
 
     /// <summary>Reserved, mirrors the Swift dictionary (e.g. <c>sftp.login.path</c>).</summary>
-    public Dictionary<string, string> Attachment { get; init; } = [];
+    private Dictionary<string, string> _attachment = [];
+
+    public Dictionary<string, string> Attachment
+    {
+        get => _attachment;
+        init
+        {
+            _attachment = new Dictionary<string, string>(value);
+            foreach (var key in new[] { "cloudflare.serviceToken.secret", "remoteDesktop.vnc.password" })
+            {
+                if (_attachment.TryGetValue(key, out var secret))
+                    _attachment[key] = SecretProtector.Protect(secret);
+            }
+        }
+    }
+    /// <summary>How SSH reaches the server; absent attachment data means direct TCP.</summary>
+    [JsonIgnore]
+    public Transport TransportMode
+    {
+        get => Attachment.GetValueOrDefault("transport") switch
+        {
+            "cloudflare-access" => Transport.CloudflareAccess,
+            "uu-remote" => Transport.UURemote,
+            _ => Transport.Direct,
+        };
+        init => Attachment = WithAttachment("transport", value switch
+        {
+            Transport.Direct => null,
+            Transport.CloudflareAccess => "cloudflare-access",
+            Transport.UURemote => "uu-remote",
+            _ => null,
+        });
+    }
+
+    /// <summary>Cloudflare Access service-token client ID.</summary>
+    [JsonIgnore]
+    public string CloudflareServiceTokenId
+    {
+        get => Attachment.GetValueOrDefault("cloudflare.serviceToken.id", "");
+        init => Attachment = WithAttachment("cloudflare.serviceToken.id", value);
+    }
+
+    /// <summary>Cloudflare Access service-token client secret.</summary>
+    [JsonIgnore]
+    public string CloudflareServiceTokenSecret
+    {
+        get => SecretProtector.Unprotect(Attachment.GetValueOrDefault("cloudflare.serviceToken.secret", ""));
+        init => Attachment = WithAttachment("cloudflare.serviceToken.secret", SecretProtector.Protect(value));
+    }
+
+    public enum Transport
+    {
+        Direct,
+        CloudflareAccess,
+        UURemote,
+    }
+
+    private Dictionary<string, string> WithAttachment(string key, string? value)
+    {
+        var attachment = new Dictionary<string, string>(Attachment);
+        if (string.IsNullOrEmpty(value)) attachment.Remove(key);
+        else attachment[key] = value;
+        return attachment;
+    }
+
+    public enum RemoteDesktopProtocolType
+    {
+        None,
+        Vnc,
+        UuRemote,
+    }
+
+    [JsonIgnore]
+    public RemoteDesktopProtocolType RemoteDesktopProtocol
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.protocol") switch
+        {
+            "vnc" => RemoteDesktopProtocolType.Vnc,
+            "uu-remote" => RemoteDesktopProtocolType.UuRemote,
+            _ => RemoteDesktopProtocolType.None,
+        };
+        init => Attachment = WithAttachment("remoteDesktop.protocol", value switch
+        {
+            RemoteDesktopProtocolType.Vnc => "vnc",
+            RemoteDesktopProtocolType.UuRemote => "uu-remote",
+            _ => null,
+        });
+    }
+
+    [JsonIgnore]
+    public string VncPort
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.vnc.port", "5900");
+        init => Attachment = WithAttachment(
+            "remoteDesktop.vnc.port",
+            string.IsNullOrEmpty(value) || value == "5900" ? null : value);
+    }
+
+    [JsonIgnore]
+    public string VncPassword
+    {
+        get => SecretProtector.Unprotect(Attachment.GetValueOrDefault("remoteDesktop.vnc.password", ""));
+        init => Attachment = WithAttachment("remoteDesktop.vnc.password", SecretProtector.Protect(value));
+    }
+
+    [JsonIgnore]
+    public string VncUsername
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.vnc.username", "");
+        init => Attachment = WithAttachment("remoteDesktop.vnc.username", value);
+    }
+
+    [JsonIgnore]
+    public bool VncShared
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.vnc.shared") != "0";
+        init => Attachment = WithAttachment("remoteDesktop.vnc.shared", value ? null : "0");
+    }
+
+    [JsonIgnore]
+    public bool VncOverSSH
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.vnc.overSSH") == "1";
+        init => Attachment = WithAttachment("remoteDesktop.vnc.overSSH", value ? "1" : null);
+    }
+
+    [JsonIgnore]
+    public string UUDeviceID
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.uu.deviceID", "");
+        init => Attachment = WithAttachment("remoteDesktop.uu.deviceID", value);
+    }
+
+    [JsonIgnore]
+    public string UUDeviceAlias
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.uu.deviceAlias", "");
+        init => Attachment = WithAttachment("remoteDesktop.uu.deviceAlias", value);
+    }
+
+    [JsonIgnore]
+    public string UUDeviceStatus
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.uu.status", "");
+        init => Attachment = WithAttachment("remoteDesktop.uu.status", value);
+    }
+
+    [JsonIgnore]
+    public string UUWallpaperUrl
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.uu.wallpaperURL", "");
+        init => Attachment = WithAttachment("remoteDesktop.uu.wallpaperURL", value);
+    }
+
+    [JsonIgnore]
+    public bool UURemoteManaged
+    {
+        get => Attachment.GetValueOrDefault("remoteDesktop.uu.managed") == "1";
+        init => Attachment = WithAttachment("remoteDesktop.uu.managed", value ? "1" : null);
+    }
+
+    [JsonIgnore]
+    public bool IsUURemoteDevice =>
+        RemoteDesktopProtocol == RemoteDesktopProtocolType.UuRemote &&
+        TransportMode == Transport.UURemote && !string.IsNullOrEmpty(UUDeviceID);
+
+    [JsonIgnore]
+    public bool HasRemoteDesktop => RemoteDesktopProtocol != RemoteDesktopProtocolType.None;
 
     [JsonIgnore]
     public int Port => int.TryParse(RemotePort, out var port) && port > 0 ? port : 22;

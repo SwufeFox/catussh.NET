@@ -1,3 +1,5 @@
+using System.Net;
+using Catussh.Core.Store;
 using Catussh.Core.Utils;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -68,10 +70,23 @@ public sealed class SshConnection : IDisposable
     private readonly int _port;
     private readonly TimeSpan _timeout;
     private readonly KnownHosts? _knownHosts;
+    private readonly RDMachine.Transport _transport;
     private SshClient? _client;
     private string? _banner;
     private string? _fingerprint;
     private bool _disposed;
+    private readonly string _serviceTokenId;
+    private CloudflareAccessTunnel? _tunnel;
+    private readonly string _serviceTokenSecret;
+    private CancellationToken _connectCancellationToken;
+
+    public SshConnection(RDMachine machine, TimeSpan timeout, KnownHosts? knownHosts = null)
+        : this(machine.RemoteAddress, machine.Port, timeout, knownHosts)
+    {
+        _transport = machine.TransportMode;
+        _serviceTokenId = machine.CloudflareServiceTokenId;
+        _serviceTokenSecret = machine.CloudflareServiceTokenSecret;
+    }
 
     public SshConnection(string host, int port, TimeSpan timeout, KnownHosts? knownHosts = null)
     {
@@ -80,11 +95,16 @@ public sealed class SshConnection : IDisposable
         _port = port <= 0 ? 22 : port;
         _timeout = timeout <= TimeSpan.Zero ? TimeSpan.FromSeconds(20) : timeout;
         _knownHosts = knownHosts;
+        _transport = RDMachine.Transport.Direct;
+        _serviceTokenId = "";
+        _serviceTokenSecret = "";
     }
 
     public string Host => _host;
 
     public int Port => _port;
+
+    public RDMachine.Transport TransportMode => _transport;
 
     public bool IsConnected
     {
@@ -115,11 +135,16 @@ public sealed class SshConnection : IDisposable
     /// same rule as <c>authenticateWithAutoIdentities</c>.
     /// </summary>
     public (SshConnectOutcome Outcome, IReadOnlyList<SshAttempt> Attempts) Connect(
-        IReadOnlyList<SshCredential> credentials)
+        IReadOnlyList<SshCredential> credentials) => Connect(credentials, CancellationToken.None);
+
+    public (SshConnectOutcome Outcome, IReadOnlyList<SshAttempt> Attempts) Connect(
+        IReadOnlyList<SshCredential> credentials,
+        CancellationToken cancellationToken)
     {
         var attempts = new List<SshAttempt>();
         lock (_gate)
         {
+            _connectCancellationToken = cancellationToken;
             if (credentials.Count == 0)
             {
                 LastError = "No identity to authenticate with.";
@@ -138,10 +163,14 @@ public sealed class SshConnection : IDisposable
                 }
                 catch (Exception ex)
                 {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        LastError = "Connection cancelled.";
+                        return (SshConnectOutcome.ConnectFailed, attempts);
+                    }
                     var message = Describe(ex);
                     attempts.Add(new SshAttempt(credential, false, message));
                     LastError = message;
-                    continue;
                 }
 
                 if (_client is { IsConnected: true })
@@ -238,6 +267,28 @@ public sealed class SshConnection : IDisposable
             return stream;
         }
     }
+    /// <summary>Opens a second SSH.NET channel with the authenticated connection's credentials.</summary>
+    public SftpClient OpenSftp()
+    {
+        lock (_gate)
+        {
+            if (_client is not { IsConnected: true })
+                throw new InvalidOperationException("Not connected.");
+
+            var client = new SftpClient(_client.ConnectionInfo);
+            client.HostKeyReceived += OnHostKeyReceived;
+            try
+            {
+                client.Connect();
+                return client;
+            }
+            catch
+            {
+                client.Dispose();
+                throw;
+            }
+        }
+    }
 
     /// <summary>
     /// A local port forward — the port of <c>createPortForwardWithLocalPort</c>.
@@ -265,6 +316,8 @@ public sealed class SshConnection : IDisposable
             catch (Exception) { /* Already gone. */ }
             _client?.Dispose();
             _client = null;
+            _tunnel?.Dispose();
+            _tunnel = null;
         }
     }
 
@@ -285,18 +338,12 @@ public sealed class SshConnection : IDisposable
     {
         try
         {
-            _client?.Dispose();
-            _client = new SshClient(BuildConnectionInfo(credentials: null));
-            _client.HostKeyReceived += OnHostKeyReceived;
-            _client.Connect();
-            _banner = _client.ConnectionInfo?.ServerVersion;
+            ConnectClient(credentials: null);
             return true;
         }
         catch (Exception ex)
         {
             LastError = Describe(ex);
-            _client?.Dispose();
-            _client = null;
             return false;
         }
     }
@@ -317,14 +364,44 @@ public sealed class SshConnection : IDisposable
         e.CanTrust = true;
     }
 
-    private void Authenticate(SshCredential credential)
+    private void ConnectClient(SshCredential? credentials)
     {
         _client?.Dispose();
-        _client = new SshClient(BuildConnectionInfo(credential));
-        _client.HostKeyReceived += OnHostKeyReceived;
-        _client.Connect();
-        _banner ??= _client.ConnectionInfo?.ServerVersion;
+        _client = null;
+        _tunnel?.Dispose();
+        _tunnel = null;
+
+        try
+        {
+            if (_transport == RDMachine.Transport.CloudflareAccess)
+            {
+                _tunnel = CloudflareAccessTunnel.Open(
+                    _host,
+                    _serviceTokenId,
+                    _serviceTokenSecret,
+                    _timeout,
+                    _connectCancellationToken);
+            }
+
+            _client = new SshClient(BuildConnectionInfo(credentials));
+            _client.HostKeyReceived += OnHostKeyReceived;
+            _client.ConnectAsync(_connectCancellationToken).GetAwaiter().GetResult();
+            _banner ??= _client.ConnectionInfo?.ServerVersion;
+        }
+        catch (Exception ex)
+        {
+            var tunnelError = _tunnel?.LastError;
+            _client?.Dispose();
+            _client = null;
+            _tunnel?.Dispose();
+            _tunnel = null;
+            if (!string.IsNullOrWhiteSpace(tunnelError))
+                throw new InvalidOperationException(tunnelError, ex);
+            throw;
+        }
     }
+
+    private void Authenticate(SshCredential credential) => ConnectClient(credential);
 
     private ConnectionInfo BuildConnectionInfo(SshCredential? credentials)
     {
@@ -349,7 +426,9 @@ public sealed class SshConnection : IDisposable
             methods.Add(new PasswordAuthenticationMethod(credentials.Username, credentials.Password ?? ""));
         }
 
-        return new ConnectionInfo(_host, _port, credentials?.Username ?? "probe", methods.ToArray())
+        var host = _tunnel?.Host ?? _host;
+        var port = _tunnel?.Port ?? _port;
+        return new ConnectionInfo(host, port, credentials?.Username ?? "probe", methods.ToArray())
         {
             Timeout = _timeout,
         };

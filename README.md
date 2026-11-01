@@ -3,15 +3,18 @@
 管 Linux / macOS 服务器的 SSH 终端、文件传输和实时监控。
 原项目是 macOS / iOS 应用，这里用 .NET 10 重写。Fork 自 https://github.com/mizorewww/catussh
 
-## 现在能看什么
+## 现在能用什么
 
 - Home、Servers、Identities、Snippets、Port Forward、Settings
-- Monitor：CPU、内存、磁盘、网速曲线、GPU，亮色暗色都有
+- Monitor：CPU、内存、磁盘、网速曲线和 GPU，支持亮色与暗色
+- Terminal：可交互 SSH shell，支持普通 SSH、Cloudflare Access 和 UU Remote
+- Files：SFTP 浏览目录、创建文件夹、上传和下载；可配置每台服务器的起始目录
+- Remote Desktop：VNC 键鼠控制、SSH 转发，以及 UU Remote WebRTC 桌面
+- Servers 页面可通过 mDNS 发现附近的 VNC / Screen Sharing 主机，并预填服务器配置
 
-能用的：Quick Connect、新建服务器、新建身份（密码或密钥）、真实 SSH 连接与监控。
-服务器列表和身份存在 `%APPDATA%\catussh.NET\store.json`，密码用 Windows 账户加密。
+Quick Connect、新建服务器与身份、真实 SSH 连接和服务器监控均可用。服务器和身份保存在 `%APPDATA%\catussh.NET\store.json`，密码由 Windows 账户加密。
 
-还没做的：Terminal 页、FileTransfer 页、Snippets 和 Port Forward 的实际执行。
+Snippets 和 Port Forward 页面目前没有实际执行功能。
 
 ## 运行
 

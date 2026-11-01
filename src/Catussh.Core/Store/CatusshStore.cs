@@ -30,6 +30,52 @@ public sealed class CatusshStore
         "store.json");
 
     public string Path_ => _path;
+    public (string CredentialsJson, string Nickname) ReadUURemoteAccount()
+    {
+        lock (_gate)
+            return (SecretProtector.Unprotect(_document.UURemoteCredentials), _document.UURemoteNickname);
+    }
+
+    public void SaveUURemoteAccount(string credentialsJson, string nickname)
+    {
+        lock (_gate)
+        {
+            _document.UURemoteCredentials = SecretProtector.Protect(credentialsJson ?? "");
+            _document.UURemoteNickname = nickname ?? "";
+            Save();
+        }
+    }
+
+    public RDFolder EnsureUURemoteFolder(string userID)
+    {
+        if (string.IsNullOrWhiteSpace(userID)) throw new ArgumentException("UU account user id is empty.", nameof(userID));
+        lock (_gate)
+        {
+            var index = _document.FolderEntries.FindIndex(folder => folder.IsLinked && folder.SourceUserID == userID);
+            if (index >= 0) return _document.FolderEntries[index];
+
+            index = _document.FolderEntries.FindIndex(folder => folder.Name == "UU Remote");
+            if (index >= 0)
+            {
+                var linked = _document.FolderEntries[index] with { Source = "uuRemote", SourceUserID = userID };
+                _document.FolderEntries[index] = linked;
+                Save();
+                return linked;
+            }
+
+            var created = new RDFolder { Name = "UU Remote", Source = "uuRemote", SourceUserID = userID, SortIndex = NextFolderSortIndex() };
+            _document.FolderEntries.Add(created);
+            _document.Folders.Add(created.Name);
+            Save();
+            return created;
+        }
+    }
+
+    public RDFolder? Folder(string name)
+    {
+        lock (_gate)
+            return _document.FolderEntries.FirstOrDefault(folder => string.Equals(folder.Name, name, StringComparison.OrdinalIgnoreCase));
+    }
 
     public IReadOnlyList<RDMachine> Machines
     {
@@ -70,6 +116,128 @@ public sealed class CatusshStore
         }
     }
 
+    /// <summary>Named folders with their ownership, including empty and linked folders.</summary>
+    public IReadOnlyList<RDFolder> FolderInfos
+    {
+        get
+        {
+            lock (_gate)
+                return _document.FolderEntries.OrderBy(static folder => folder.SortIndex)
+                    .ThenBy(static folder => folder.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    /// <summary>Folder names for the existing UI contract, including names present on saved servers.</summary>
+    public IReadOnlyList<string> Folders
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _document.FolderEntries.Select(static folder => folder.Name)
+                    .Concat(_document.Folders)
+                    .Concat(_document.Machines.Select(static machine => machine.Group))
+                    .Where(static name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+        }
+    }
+
+    public bool CreateFolder(string name)
+    {
+        var trimmed = (name ?? "").Trim();
+        if (trimmed.Length == 0) return false;
+        lock (_gate)
+        {
+            if (AllFolderNamesLocked().Any(existing => string.Equals(existing, trimmed, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            _document.Folders.Add(trimmed);
+            _document.FolderEntries.Add(new RDFolder { Name = trimmed, SortIndex = NextFolderSortIndex() });
+            Save();
+            return true;
+        }
+    }
+
+    public bool RenameFolder(string name, string newName)
+    {
+        var oldName = (name ?? "").Trim();
+        var trimmed = (newName ?? "").Trim();
+        if (oldName.Length == 0 || trimmed.Length == 0) return false;
+        lock (_gate)
+        {
+            var entry = _document.FolderEntries.FirstOrDefault(folder => string.Equals(folder.Name, oldName, StringComparison.OrdinalIgnoreCase));
+            if (entry?.IsLinked == true) return false;
+            var folders = AllFolderNamesLocked().ToList();
+            if (!folders.Any(existing => string.Equals(existing, oldName, StringComparison.OrdinalIgnoreCase))) return false;
+            if (folders.Any(existing => !string.Equals(existing, oldName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existing, trimmed, StringComparison.OrdinalIgnoreCase))) return false;
+
+            _document.Folders.RemoveAll(existing => string.Equals(existing, oldName, StringComparison.OrdinalIgnoreCase));
+            _document.Folders.Add(trimmed);
+            if (entry is not null)
+            {
+                var index = _document.FolderEntries.IndexOf(entry);
+                _document.FolderEntries[index] = entry with { Name = trimmed };
+            }
+            else
+            {
+                _document.FolderEntries.Add(new RDFolder { Name = trimmed, SortIndex = NextFolderSortIndex() });
+            }
+            for (var i = 0; i < _document.Machines.Count; i++)
+            {
+                if (string.Equals(_document.Machines[i].Group, oldName, StringComparison.OrdinalIgnoreCase))
+                    _document.Machines[i] = _document.Machines[i] with { Group = trimmed };
+            }
+            Save();
+            return true;
+        }
+    }
+
+    public bool RemoveFolder(string name)
+    {
+        var target = (name ?? "").Trim();
+        if (target.Length == 0) return false;
+        lock (_gate)
+        {
+            if (_document.FolderEntries.Any(folder => folder.IsLinked && string.Equals(folder.Name, target, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            var exists = _document.Folders.RemoveAll(existing =>
+                string.Equals(existing, target, StringComparison.OrdinalIgnoreCase)) > 0;
+            exists |= _document.FolderEntries.RemoveAll(folder =>
+                string.Equals(folder.Name, target, StringComparison.OrdinalIgnoreCase)) > 0;
+            for (var i = 0; i < _document.Machines.Count; i++)
+            {
+                if (!string.Equals(_document.Machines[i].Group, target, StringComparison.OrdinalIgnoreCase)) continue;
+                _document.Machines[i] = _document.Machines[i] with { Group = "" };
+                exists = true;
+            }
+            if (exists) Save();
+            return exists;
+        }
+    }
+
+    public bool MoveMachineToFolder(string machineId, string folder)
+    {
+        var target = (folder ?? "").Trim();
+        lock (_gate)
+        {
+            var index = _document.Machines.FindIndex(machine => machine.Id == machineId);
+            if (index < 0) return false;
+            var targetFolder = target.Length == 0 ? null : _document.FolderEntries.FirstOrDefault(entry =>
+                string.Equals(entry.Name, target, StringComparison.OrdinalIgnoreCase));
+            if (target.Length > 0 && !AllFolderNamesLocked().Any(existing => string.Equals(existing, target, StringComparison.OrdinalIgnoreCase)))
+                return false;
+            if (targetFolder?.IsLinked == true && !_document.Machines[index].IsUURemoteDevice)
+                return false;
+            _document.Machines[index] = _document.Machines[index] with { Group = target };
+            Save();
+            return true;
+        }
+    }
+
+
     public RDMachine? FindMachine(string id)
     {
         lock (_gate) return _document.Machines.FirstOrDefault(m => m.Id == id);
@@ -100,10 +268,45 @@ public sealed class CatusshStore
     {
         lock (_gate)
         {
+            if (!string.IsNullOrWhiteSpace(machine.Group))
+            {
+                if (!_document.Folders.Any(folder => string.Equals(folder, machine.Group, StringComparison.OrdinalIgnoreCase)))
+                    _document.Folders.Add(machine.Group);
+                if (!_document.FolderEntries.Any(folder => string.Equals(folder.Name, machine.Group, StringComparison.OrdinalIgnoreCase)))
+                    _document.FolderEntries.Add(new RDFolder { Name = machine.Group, SortIndex = NextFolderSortIndex() });
+            }
             var index = _document.Machines.FindIndex(m => m.Id == machine.Id);
             if (index >= 0) _document.Machines[index] = machine;
             else _document.Machines.Add(machine);
             Save();
+        }
+    }
+
+    public void ApplyMachineChanges(IReadOnlyCollection<RDMachine> upserts, IReadOnlyCollection<string> removeIDs)
+    {
+        lock (_gate)
+        {
+            if (removeIDs.Count > 0)
+            {
+                var removed = removeIDs.ToHashSet(StringComparer.Ordinal);
+                _document.Machines.RemoveAll(machine => removed.Contains(machine.Id));
+            }
+
+            foreach (var machine in upserts)
+            {
+                if (!string.IsNullOrWhiteSpace(machine.Group))
+                {
+                    if (!_document.Folders.Any(folder => string.Equals(folder, machine.Group, StringComparison.OrdinalIgnoreCase)))
+                        _document.Folders.Add(machine.Group);
+                    if (!_document.FolderEntries.Any(folder => string.Equals(folder.Name, machine.Group, StringComparison.OrdinalIgnoreCase)))
+                        _document.FolderEntries.Add(new RDFolder { Name = machine.Group, SortIndex = NextFolderSortIndex() });
+                }
+                var index = _document.Machines.FindIndex(existing => existing.Id == machine.Id);
+                if (index >= 0) _document.Machines[index] = machine;
+                else _document.Machines.Add(machine);
+            }
+
+            if (upserts.Count > 0 || removeIDs.Count > 0) Save();
         }
     }
 
@@ -174,6 +377,16 @@ public sealed class CatusshStore
             Save();
         }
     }
+    private IEnumerable<string> AllFolderNamesLocked() =>
+        _document.FolderEntries.Select(static folder => folder.Name)
+            .Concat(_document.Folders)
+            .Concat(_document.Machines.Select(static machine => machine.Group))
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private int NextFolderSortIndex() =>
+        _document.FolderEntries.Count == 0 ? 0 : _document.FolderEntries.Max(static folder => folder.SortIndex) + 1;
+
 
     // ---------------------------------------------------------------- file
 
@@ -187,13 +400,21 @@ public sealed class CatusshStore
                 var json = File.ReadAllText(_path);
                 if (string.IsNullOrWhiteSpace(json)) return;
                 _document = JsonSerializer.Deserialize<StoreDocument>(json, JsonOptions) ?? new StoreDocument();
+                _document.Folders ??= [];
+                _document.FolderEntries ??= [];
+                _document.Machines ??= [];
+                _document.Identities ??= [];
+                foreach (var name in _document.Folders.Concat(_document.Machines.Select(static machine => machine.Group))
+                             .Where(static name => !string.IsNullOrWhiteSpace(name)))
+                {
+                    if (_document.FolderEntries.Any(folder => string.Equals(folder.Name, name, StringComparison.OrdinalIgnoreCase))) continue;
+                    _document.FolderEntries.Add(new RDFolder { Name = name, SortIndex = NextFolderSortIndex() });
+                }
                 LoadFailed = false;
                 LoadError = null;
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
-                // Keep whatever was on disk; the UI surfaces this rather than silently
-                // presenting an empty server list as if nothing was saved.
                 LoadFailed = true;
                 LoadError = ex.Message;
             }
@@ -206,9 +427,20 @@ public sealed class CatusshStore
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
         var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(_document, JsonOptions));
-        // File.Move with overwrite is atomic on the same volume, so a crash leaves
-        // either the old file or the new one, never a truncated one.
+        var persisted = new StoreDocument
+        {
+            Folders = _document.Folders,
+            FolderEntries = _document.FolderEntries,
+            UURemoteCredentials = _document.UURemoteCredentials,
+            UURemoteNickname = _document.UURemoteNickname,
+            Machines = _document.Machines.Select(machine => machine with
+            {
+                // Re-enter the attachment init setter so VNC secrets stay encrypted.
+                Attachment = new Dictionary<string, string>(machine.Attachment),
+            }).ToList(),
+            Identities = _document.Identities,
+        };
+        File.WriteAllText(temp, JsonSerializer.Serialize(persisted, JsonOptions));
         File.Move(temp, _path, overwrite: true);
     }
 
@@ -220,6 +452,10 @@ public sealed class CatusshStore
 
     private sealed class StoreDocument
     {
+        public List<string> Folders { get; set; } = [];
+        public List<RDFolder> FolderEntries { get; set; } = [];
+        public string UURemoteCredentials { get; set; } = "";
+        public string UURemoteNickname { get; set; } = "";
         public List<RDMachine> Machines { get; set; } = [];
         public List<Identity> Identities { get; set; } = [];
     }

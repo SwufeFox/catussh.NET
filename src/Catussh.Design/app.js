@@ -72,8 +72,24 @@ const state = {
   // distinction matters — an empty list should say "no servers yet", not blink.
   machines: null,
   machinesError: null,
+  folders: null,
+  folderInfo: null,
   identities: null,
   identitiesError: null,
+  uuRemote: null,
+  uuMode: "qr",
+  uuCountryCode: "+86",
+  uuMobile: "",
+  uuSmsCode: "",
+  uuTokenDraft: "",
+  uuTokenUserID: "",
+  uuTokenDeviceID: "",
+  uuTokenClientID: "",
+  uuTokenSystemID: "",
+  uuQrImage: null,
+  uuBusy: false,
+  uuError: null,
+  uuNotice: null,
 
   // Monitor page: the session's phase, its last error, the latest reading and
   // the two toggles the Swift cards keep in @State.
@@ -83,10 +99,36 @@ const state = {
   monitorCores: false,
   monitorSwap: false,
   monitorMachineId: null,
+  desktopMachineId: null,
+  desktopStartedId: null,
+  desktopPhase: null,
+  desktopError: null,
+  desktopFrameVersion: 0,
+  desktopFrame: null,
+  vncDiscovery: null,
+  vncDiscoveryError: null,
+  vncDiscoveryBusy: false,
+  vncDiscoveryLoaded: false,
+  desktopSignalVersion: 0,
+  terminalMachineId: null,
+  terminalStartedId: null,
+  terminalPhase: null,
+  terminalError: null,
+  terminalOutput: "",
+  terminalPollBusy: false,
+  terminalTransport: null,
+  fileMachineId: null,
+  filePath: "",
+  fileEntries: [],
+  fileError: null,
+  fileBusy: false,
+  fileLoaded: false,
 
   // A pending dialog: "add-server" | "add-identity" | null.
   sheet: null,
   sheetError: null,
+  movingMachineId: null,
+  vncDraft: null,
   quickConnectValue: "",
 };
 
@@ -196,9 +238,15 @@ function machinesByGroup() {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(machine);
   }
+  for (const folder of state.folders ?? []) {
+    if (!groups.has(folder)) groups.set(folder, []);
+  }
   return [...groups.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([group, items]) => ({ group, items }));
+    .map(([group, items]) => {
+      const folder = state.folderInfo?.find(item => item.name === group);
+      return { group, items, linked: folder?.linked === true, source: folder?.source ?? "local" };
+    });
 }
 
 /* ---------------------------------------------------------------- pages */
@@ -230,7 +278,7 @@ function homePage() {
         </div>
         <div class="rx-server-card__actions">
           ${primaryButton("Connect", icons.terminal, true, `data-connect="${s.id}"`)}
-          ${borderedButton("Files", icons.files, true, `data-files="${s.id}"`)}
+          ${s.transport === "uu-remote" ? "" : borderedButton("Files", icons.files, true, `data-files="${s.id}"`)}
           ${borderedButton("Monitor", icons.monitor, true, `data-monitor="${s.id}"`)}
           ${iconButton(icons.more, `data-remove="${s.id}"`, "Remove server")}
         </div>
@@ -268,6 +316,43 @@ function homePage() {
     </div>`;
 }
 
+function nearbyVncCard() {
+  const hosts = state.vncDiscovery?.hosts ?? [];
+  const rows = hosts.map(host => {
+    const saved = allMachines().find(machine => machine.id === host.machineId)
+      ?? allMachines().find(machine => machine.remoteDesktopProtocol === "vnc"
+        && machine.address?.replace(/\.+$/, "").toLowerCase() === host.hostName?.replace(/\.+$/, "").toLowerCase()
+        && Number(machine.vncPort || 5900) === Number(host.port));
+    const savedId = host.machineId || saved?.id;
+    return `<div style="display:flex;align-items:center;gap:var(--space-3);padding:8px 12px">
+      <span class="rx-symbol-tile">${icons.windows}</span>
+      <div style="min-width:0;flex:1">
+        <div class="rx-body">${escapeHtml(host.displayName || host.name)}</div>
+        <div class="rx-help-text rx-table__mono">${escapeHtml(host.hostName)}:${escapeHtml(host.port)}</div>
+      </div>
+      ${savedId
+        ? `<span class="rx-help-text">${saved ? `Saved as ${escapeHtml(saved.name)}` : "Saved"}</span>${borderedButton("Desktop", "", true, `data-desktop="${escapeHtml(savedId)}"`)}`
+        : `<button class="rx-button rx-button--plain" type="button" data-vnc-add="${escapeHtml(host.id)}">Add…</button>`}
+    </div>`;
+  }).join("");
+  const message = !Api.available
+    ? "Open the catussh desktop app to discover local VNC hosts."
+    : state.vncDiscoveryError
+      ? `<span class="rx-help-text rx-help-text--error">${escapeHtml(state.vncDiscoveryError)}</span>`
+      : hosts.length
+        ? rows
+        : `<span class="rx-help-text">${state.vncDiscoveryBusy || !state.vncDiscoveryLoaded
+          ? "Looking for Screen Sharing and VNC hosts on this network…"
+          : "None found. Enable Screen Sharing or VNC on a nearby host."}</span>`;
+  return `<section class="rx-card" data-vnc-nearby style="padding:var(--space-2);margin-bottom:var(--space-3)">
+    <div class="rx-section-title-row" style="padding:4px 12px">
+      <span class="rx-section-title">Nearby</span><span class="rx-spacer"></span>
+      <button class="rx-button rx-button--plain" type="button" data-vnc-refresh ${state.vncDiscoveryBusy || !Api.available ? "disabled" : ""}>${state.vncDiscoveryBusy ? "Searching…" : "Refresh"}</button>
+    </div>
+    <div>${message}</div>
+  </section>`;
+}
+
 function serversPage() {
   const groups = machinesByGroup();
   const empty = groups.length === 0;
@@ -287,9 +372,11 @@ function serversPage() {
       <div class="rx-table__cell rx-table__cell--last-used rx-body"
            style="color:var(--rx-ink-secondary)">${relativeTime(s.lastConnection)}</div>
       <div class="rx-table__cell rx-table__cell--actions">
-        ${borderedButton("Files", "", true, `data-files="${s.id}"`)}
+        ${iconButton(icons.files, "Move to folder", `data-move-server="${s.id}"`)}
+        ${s.transport === "uu-remote" ? "" : borderedButton("Files", "", true, `data-files="${s.id}"`)}
         ${borderedButton("Monitor", "", true, `data-monitor="${s.id}"`)}
         ${borderedButton("Connect", "", true, `data-connect="${s.id}"`)}
+        ${["vnc", "uu-remote"].includes(s.remoteDesktopProtocol) ? borderedButton("Desktop", icons.windows, true, `data-desktop="${s.id}"`) : ""}
       </div>
     </div>`;
 
@@ -297,8 +384,9 @@ function serversPage() {
     .map(
       (g) => `
       <div class="rx-table__group">
-        <span>${escapeHtml(g.group)}</span><span class="rx-spacer"></span>
+        <span>${escapeHtml(g.group)}</span>${g.source === "uuRemote" ? `<span class="rx-tag">UU Remote</span>` : ""}<span class="rx-spacer"></span>
         <span class="rx-axis">${g.items.length}</span>
+        ${g.group === "Ungrouped" || g.linked ? "" : `<span class="rx-folder-actions">${plainButton("Rename", "", `data-rename-folder="${escapeHtml(g.group)}"`)}${plainButton("Delete", "", `data-remove-folder="${escapeHtml(g.group)}"`)}</span>`}
       </div>
       ${g.items.map(row).join("")}`
     )
@@ -307,13 +395,14 @@ function serversPage() {
   return `
     ${toolbar(
       "",
-      `${primaryButton("New Server", icons.plus, false, "data-new-server")}
+      `${borderedButton("New Folder", icons.files, true, "data-new-folder")} ${primaryButton("New Server", icons.plus, false, "data-new-server")}
        <label class="rx-field">${icons.search}
          <input placeholder="Search servers" data-search-servers />
        </label>`
     )}
     <div class="rx-page">
       <div class="rx-page-title-row"><h1 class="rx-page-title">Servers</h1></div>
+      ${nearbyVncCard()}
       ${state.machinesError
         ? `<div class="rx-card rx-empty-state">
              <span class="rx-section-title">Can't read the saved servers</span>
@@ -338,6 +427,86 @@ function serversPage() {
              </div>
            </div>`}
     </div>`;
+}
+
+function remoteDesktopPage() {
+  const machine = allMachines().find(item => item.id === state.desktopMachineId);
+  const isUU = machine?.remoteDesktopProtocol === "uu-remote";
+  return `
+    ${toolbar(
+      "",
+      `${borderedButton("Servers", icons.servers, true, "data-desktop-back")} ${plainButton("Stop Desktop", "", "data-desktop-stop")}`
+    )}
+    <div class="rx-page">
+      <div class="rx-page-title-row">
+        <h1 class="rx-page-title">${escapeHtml(machine?.name ?? "Remote Desktop")}</h1>
+        <span class="rx-spacer"></span>
+        <span class="rx-help-text" data-vnc-status>Connecting…</span>
+      </div>
+      <div class="rx-help-text rx-help-text--error" data-vnc-error>${escapeHtml(state.desktopError ?? "")}</div>
+      <div class="rx-card" style="display:flex;align-items:center;justify-content:center;min-height:320px;padding:var(--space-3);background:#111;overflow:auto">
+        <video data-uu-video tabindex="0" aria-label="UU Remote screen" autoplay playsinline muted style="${isUU ? "" : "display:none;"}max-width:100%;max-height:calc(100vh - 220px);object-fit:contain;outline:none;touch-action:none"></video>
+        <canvas data-vnc-canvas tabindex="0" aria-label="Remote desktop screen" style="${isUU ? "display:none;" : ""}max-width:100%;max-height:calc(100vh - 220px);object-fit:contain;outline:none;touch-action:none"></canvas>
+      </div>
+    </div>`;
+}
+
+function terminalPage() {
+  const machine = allMachines().find(item => item.id === state.terminalMachineId);
+  return `
+    ${toolbar("", `${borderedButton("Servers", icons.servers, true, "data-terminal-back")} ${plainButton("Close Terminal", "", "data-terminal-stop")}`)}
+    <div class="rx-page">
+      <div class="rx-page-title-row">
+        <h1 class="rx-page-title">${escapeHtml(machine?.name ?? "Terminal")}</h1>
+        <span class="rx-spacer"></span><span class="rx-help-text" data-terminal-status>${escapeHtml(state.terminalPhase ?? "connecting")}</span>
+      </div>
+      <div class="rx-help-text rx-help-text--error" data-terminal-error>${escapeHtml(state.terminalError ?? "")}</div>
+      <div class="rx-card" style="padding:0;background:#111;overflow:hidden">
+        <pre data-terminal-output tabindex="0" aria-label="Terminal output" style="height:calc(100vh - 310px);min-height:280px;overflow:auto;margin:0;padding:16px;color:#e6e6e6;background:#111;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(state.terminalOutput)}</pre>
+        <form data-terminal-form style="display:flex;gap:8px;padding:12px;border-top:1px solid #333">
+          <textarea name="input" data-terminal-input rows="1" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Terminal input" style="flex:1;resize:vertical;min-height:36px;max-height:120px;padding:8px;color:#f3f3f3;background:#181818;border:1px solid #444;border-radius:6px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace"></textarea>
+          <button class="rx-button rx-button--primary" type="submit" data-terminal-send>Send</button>
+        </form>
+      </div>
+    </div>`;
+}
+
+function filesPage() {
+  const rows = (state.fileEntries ?? []).map(entry => `
+    <div class="rx-table__row rx-table__row--body" style="display:grid;grid-template-columns:minmax(220px,1fr) 120px 180px 120px">
+      <div class="rx-table__cell rx-body">${entry.isDirectory
+        ? `<button class="rx-button rx-button--plain" type="button" data-file-directory="${escapeHtml(entry.fullName)}">${icons.files} ${escapeHtml(entry.name)}</button>`
+        : escapeHtml(entry.name)}</div>
+      <div class="rx-table__cell rx-body rx-table__mono">${entry.isDirectory ? "Folder" : formatFileSize(entry.length)}</div>
+      <div class="rx-table__cell rx-body">${escapeHtml(entry.lastWriteTimeUtc ? new Date(entry.lastWriteTimeUtc).toLocaleString() : "")}</div>
+      <div class="rx-table__cell rx-body">${entry.isDirectory ? "" : borderedButton("Download", "", true, `data-file-download="${escapeHtml(entry.fullName)}"`)}</div>
+    </div>`).join("");
+  return `
+    ${toolbar("", `${borderedButton("Servers", icons.servers, true, "data-files-back")} ${plainButton("New Folder", icons.files, "data-files-new-folder")} <label class="rx-button rx-button--plain">Upload<input type="file" data-file-upload multiple hidden /></label>`)}
+    <div class="rx-page">
+      <div class="rx-page-title-row"><h1 class="rx-page-title">${escapeHtml(allMachines().find(item => item.id === state.fileMachineId)?.name ?? "Files")}</h1><span class="rx-spacer"></span></div>
+      <div class="rx-row-3" style="margin-bottom:var(--space-3)">
+        <button class="rx-button rx-button--plain" type="button" data-files-up>Up</button>
+        <form data-files-path-form style="display:flex;flex:1;gap:8px">
+          <span class="rx-field" style="flex:1"><input name="path" data-files-path value="${escapeHtml(state.filePath)}" autocomplete="off" /></span>
+          <button class="rx-button rx-button--plain" type="submit">Open</button>
+        </form>
+        <button class="rx-button rx-button--plain" type="button" data-files-refresh>${state.fileBusy ? "Loading…" : "Refresh"}</button>
+      </div>
+      <div class="rx-help-text rx-help-text--error" data-files-error>${escapeHtml(state.fileError ?? "")}</div>
+      <div class="rx-card" style="padding:var(--space-2);overflow:auto">
+        <div class="rx-table__row rx-table__row--head" style="display:grid;grid-template-columns:minmax(220px,1fr) 120px 180px 120px"><div class="rx-table__cell">Name</div><div class="rx-table__cell">Size</div><div class="rx-table__cell">Modified</div><div class="rx-table__cell"></div></div>
+        ${rows || `<p class="rx-help-text" style="padding:var(--space-3)">${state.fileBusy ? "Loading files…" : "This folder is empty."}</p>`}
+      </div>
+    </div>`;
+}
+
+function formatFileSize(value) {
+  const size = Number(value) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function identitiesPage() {
@@ -432,11 +601,90 @@ function portForwardPage() {
     </div>`;
 }
 
+function uuRemoteCard() {
+  const account = state.uuRemote ?? {};
+  const error = state.uuError || account.loginError || account.refreshError;
+  const deviceRows = (account.devices ?? [])
+    .filter(device => device.desktop && device.deviceID !== account.ownDeviceID)
+    .map(device => `
+      <div class="uu-account__device">
+        <span class="rx-status-dot ${device.online ? "rx-status-dot--success" : "rx-status-dot--off"}"></span>
+        <div class="uu-account__device-copy">
+          <strong>${escapeHtml(device.alias || device.deviceID)}</strong>
+          <span>${escapeHtml(device.platformName)} · ${device.online ? "Online" : "Offline"}</span>
+        </div>
+      </div>`).join("");
+
+  let content;
+  if (!Api.available) {
+    content = `<p class="rx-help-text">Sign in from the Windows app to sync your UU Remote computers into their own server folder.</p>`;
+  } else if (account.isLoggedIn) {
+    content = `
+      <div class="uu-account__identity">
+        <div><strong>${escapeHtml(account.nickname || "UU Remote account")}</strong><span>${escapeHtml(account.userID || "Signed in")}</span></div>
+        <button class="rx-button rx-button--plain" type="button" data-uu-refresh ${state.uuBusy ? "disabled" : ""}>Refresh devices</button>
+        <button class="rx-button rx-button--plain" type="button" data-uu-logout ${state.uuBusy ? "disabled" : ""}>Sign out</button>
+      </div>
+      <p class="rx-help-text">Desktop devices are kept in the linked “UU Remote” folder.</p>
+      <div class="uu-account__devices">${deviceRows || `<p class="rx-help-text">No other desktop devices are linked to this account.</p>`}</div>`;
+  } else {
+    const modes = [["qr", "QR code"], ["sms", "SMS"], ["token", "Token"]]
+      .map(([id, label]) => `<button type="button" class="rx-button ${state.uuMode === id ? "rx-button--primary" : "rx-button--plain"}" data-uu-mode="${id}">${label}</button>`).join("");
+    let loginFields;
+    if (state.uuMode === "sms") {
+      loginFields = `
+        <form class="uu-account__form" data-uu-sms-send>
+          <label class="rx-stack-1"><span class="rx-caps-label">Country calling code</span><span class="rx-field"><input name="countryCode" value="${escapeHtml(state.uuCountryCode)}" required /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Mobile number</span><span class="rx-field"><input name="mobile" value="${escapeHtml(state.uuMobile)}" inputmode="tel" required /></span></label>
+          <button class="rx-button rx-button--plain" type="submit" ${state.uuBusy ? "disabled" : ""}>Send verification code</button>
+        </form>
+        <form class="uu-account__form" data-uu-sms-login>
+          <label class="rx-stack-1"><span class="rx-caps-label">Verification code</span><span class="rx-field"><input name="code" value="${escapeHtml(state.uuSmsCode)}" inputmode="numeric" required /></span></label>
+          <button class="rx-button rx-button--primary" type="submit" ${state.uuBusy ? "disabled" : ""}>Sign in</button>
+        </form>`;
+    } else if (state.uuMode === "token") {
+      loginFields = `
+        <form class="uu-account__form" data-uu-token-login>
+          <label class="rx-stack-1"><span class="rx-caps-label">UU Remote token</span><span class="rx-field"><input name="token" type="password" autocomplete="off" required value="${escapeHtml(state.uuTokenDraft)}" /></span></label>
+          <details><summary>Additional account values</summary>
+            <div class="uu-account__form uu-account__form--details">
+              <label class="rx-stack-1"><span class="rx-caps-label">User ID</span><span class="rx-field"><input name="userID" value="${escapeHtml(state.uuTokenUserID)}" /></span></label>
+              <label class="rx-stack-1"><span class="rx-caps-label">Device ID</span><span class="rx-field"><input name="deviceID" value="${escapeHtml(state.uuTokenDeviceID)}" /></span></label>
+              <label class="rx-stack-1"><span class="rx-caps-label">Client ID</span><span class="rx-field"><input name="clientID" value="${escapeHtml(state.uuTokenClientID)}" /></span></label>
+              <label class="rx-stack-1"><span class="rx-caps-label">System ID</span><span class="rx-field"><input name="systemID" value="${escapeHtml(state.uuTokenSystemID)}" /></span></label>
+            </div>
+          </details>
+          <button class="rx-button rx-button--primary" type="submit" ${state.uuBusy ? "disabled" : ""}>Import token</button>
+        </form>`;
+    } else {
+      const active = ["waiting", "scanned", "confirmed", "generating"].includes(account.qrState);
+      loginFields = `
+        <div class="uu-account__qr">
+          ${state.uuQrImage ? `<img src="${escapeHtml(state.uuQrImage)}" alt="UU Remote sign-in QR code" />` : `<div class="uu-account__qr-empty">QR code appears here</div>`}
+          <div class="uu-account__qr-copy"><strong>${escapeHtml(account.qrHint || "Sign in by scanning a QR code")}</strong><span>Scan with the UU Remote app and confirm the sign-in.</span></div>
+        </div>
+        <button class="rx-button rx-button--primary" type="button" data-uu-qr-start ${state.uuBusy || active ? "disabled" : ""}>${state.uuQrImage ? "Generate a new QR code" : "Generate QR code"}</button>`;
+    }
+    content = `
+      <p class="rx-help-text">Sign in to keep your UU Remote desktop devices synced in a separate server folder.</p>
+      <div class="uu-account__modes">${modes}</div>
+      ${loginFields}
+      ${state.uuNotice ? `<p class="rx-help-text">${escapeHtml(state.uuNotice)}</p>` : ""}`;
+  }
+
+  return `<section class="rx-card uu-account">
+    <div class="rx-section-title-row"><span class="rx-section-title">UU Remote</span></div>
+    ${content}
+    ${error ? `<p class="rx-help-text rx-help-text--error">${escapeHtml(error)}</p>` : ""}
+  </section>`;
+}
+
 function settingsPage() {
   return `
     ${toolbar("", "")}
     <div class="rx-page">
       <div class="rx-page-title-row"><h1 class="rx-page-title">Settings</h1></div>
+      ${uuRemoteCard()}
       <div class="rx-card">
         <div class="rx-section-title-row" style="margin-bottom:8px">
           <span class="rx-section-title">Appearance</span>
@@ -464,6 +712,154 @@ function settingsPage() {
     </div>`;
 }
 
+let uuQrPollPromise = null;
+
+function beginUUQrPolling() {
+  if (uuQrPollPromise) return uuQrPollPromise;
+  uuQrPollPromise = (async () => {
+    while (["waiting", "scanned", "confirmed"].includes(state.uuRemote?.qrState) && !state.uuRemote?.isLoggedIn) {
+      const result = await Api.pollUuQr();
+      if (!result || result.error) {
+        state.uuError = result?.error ?? "Could not check the UU Remote sign-in.";
+        state.uuRemote = { ...(state.uuRemote ?? {}), qrState: "failed", qrHint: "Sign-in status could not be checked." };
+        if (state.page === "settings") render();
+        break;
+      }
+      if (result.account) state.uuRemote = result.account;
+      state.uuError = null;
+      if (state.uuRemote?.isLoggedIn) {
+        await loadMachines();
+        break;
+      }
+      if (result.status === 0) break;
+      if (state.page === "settings") render();
+    }
+  })().finally(() => { uuQrPollPromise = null; });
+  return uuQrPollPromise;
+}
+
+document.addEventListener("click", async (event) => {
+  const mode = event.target.closest("[data-uu-mode]");
+  if (mode) {
+    event.preventDefault();
+    state.uuMode = mode.dataset.uuMode;
+    state.uuError = null;
+    render();
+    return;
+  }
+
+  if (event.target.closest("[data-uu-qr-start]")) {
+    event.preventDefault();
+    state.uuBusy = true;
+    state.uuError = null;
+    state.uuNotice = null;
+    render();
+    const result = await Api.startUuQr();
+    state.uuBusy = false;
+    if (!result || result.error) {
+      state.uuError = result?.error ?? "Could not start UU Remote sign-in.";
+    } else {
+      state.uuQrImage = result.qrImage;
+      state.uuRemote = result.account;
+      render();
+      beginUUQrPolling();
+      return;
+    }
+    render();
+    return;
+  }
+
+  if (event.target.closest("[data-uu-refresh]")) {
+    event.preventDefault();
+    state.uuBusy = true;
+    state.uuError = null;
+    render();
+    const result = await Api.refreshUuDevices();
+    state.uuBusy = false;
+    if (!result || result.error) state.uuError = result?.error ?? "Could not refresh UU Remote devices.";
+    else { state.uuRemote = result; state.uuError = null; }
+    await loadMachines();
+    return;
+  }
+
+  if (event.target.closest("[data-uu-logout]")) {
+    event.preventDefault();
+    state.uuBusy = true;
+    state.uuError = null;
+    render();
+    const result = await Api.logoutUu();
+    state.uuBusy = false;
+    if (!result || result.error) state.uuError = result?.error ?? "Could not sign out of UU Remote.";
+    else { state.uuRemote = result; state.uuQrImage = null; state.uuError = null; }
+    await loadMachines();
+  }
+});
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-uu-sms-send], [data-uu-sms-login], [data-uu-token-login]");
+  if (!form) return;
+  event.preventDefault();
+  const data = new FormData(form);
+  state.uuError = null;
+  state.uuNotice = null;
+
+  if (form.matches("[data-uu-sms-send]")) {
+    state.uuCountryCode = data.get("countryCode")?.toString().trim() ?? "";
+    state.uuMobile = data.get("mobile")?.toString().trim() ?? "";
+    state.uuBusy = true;
+    render();
+    const result = await Api.sendUuSms({ countryCode: state.uuCountryCode, mobile: state.uuMobile });
+    state.uuBusy = false;
+    if (result?.error) state.uuError = result.error;
+    else state.uuNotice = "Verification code sent.";
+    render();
+    return;
+  }
+
+  if (form.matches("[data-uu-sms-login]")) {
+    state.uuSmsCode = data.get("code")?.toString().trim() ?? "";
+    state.uuBusy = true;
+    render();
+    const result = await Api.loginUuSms({ countryCode: state.uuCountryCode, mobile: state.uuMobile, code: state.uuSmsCode });
+    state.uuBusy = false;
+    if (result?.error) state.uuError = result.error;
+    else {
+      state.uuRemote = result;
+      state.uuSmsCode = "";
+      state.uuError = null;
+      await loadMachines();
+      return;
+    }
+    render();
+    return;
+  }
+
+  state.uuTokenDraft = data.get("token")?.toString().trim() ?? "";
+  state.uuTokenUserID = data.get("userID")?.toString().trim() ?? "";
+  state.uuTokenDeviceID = data.get("deviceID")?.toString().trim() ?? "";
+  state.uuTokenClientID = data.get("clientID")?.toString().trim() ?? "";
+  state.uuTokenSystemID = data.get("systemID")?.toString().trim() ?? "";
+  state.uuBusy = true;
+  render();
+  const result = await Api.importUuToken({
+    token: state.uuTokenDraft,
+    userID: state.uuTokenUserID,
+    deviceID: state.uuTokenDeviceID,
+    clientID: state.uuTokenClientID,
+    systemID: state.uuTokenSystemID,
+  });
+  state.uuBusy = false;
+  if (result?.error) state.uuError = result.error;
+  else {
+    state.uuRemote = result;
+    state.uuTokenDraft = "";
+    state.uuError = null;
+    await loadMachines();
+    return;
+  }
+  render();
+});
+
 /*
  * Monitor is not a sidebar entry: in the Swift app it is a session you open from
  * a server's Monitor button, and the sidebar keeps the Server group. It is
@@ -477,6 +873,9 @@ const renderers = {
   portforward: portForwardPage,
   settings: settingsPage,
   monitor: () => monitorPage(state),
+  desktop: remoteDesktopPage,
+  terminal: terminalPage,
+  files: filesPage,
 };
 
 /* ---------------------------------------------------------------- router */
@@ -502,6 +901,61 @@ function render() {
   } else {
     stopMonitorPolling();
   }
+  if (state.page === "desktop") {
+    const machine = allMachines().find(item => item.id === state.desktopMachineId);
+    const isUU = machine?.remoteDesktopProtocol === "uu-remote";
+    if (isUU) mountUuDesktop(content); else mountDesktop(content);
+    ensureDesktopPolling();
+    if (!Api.available) {
+      state.desktopError = "Open this page from the catussh desktop app to connect.";
+      updateDesktopStatus();
+    } else if (state.machines !== null && state.desktopMachineId && state.desktopStartedId !== state.desktopMachineId) {
+      if (!machine) {
+        state.desktopPhase = "failed";
+        state.desktopError = "No such server.";
+        updateDesktopStatus();
+      } else {
+        const id = state.desktopMachineId;
+        state.desktopStartedId = id;
+        Api.startDesktop(id, "desktop").then(async result => {
+          if (state.desktopMachineId !== id) return;
+          if (result?.error) state.desktopError = result.error;
+          if (isUU && result?.bootstrap) await startUuViewer(id, "desktop", result);
+          refreshDesktop();
+        });
+      }
+    }
+    refreshDesktop();
+  } else {
+    stopDesktopPolling();
+  }
+
+  if (state.page === "terminal") {
+    mountTerminal(content);
+    ensureTerminalPolling();
+    if (!Api.available) {
+      state.terminalError = "Open this page from the catussh desktop app to connect.";
+      updateTerminalStatus();
+    } else if (state.machines !== null && state.terminalMachineId && state.terminalStartedId !== state.terminalMachineId) {
+      if (!allMachines().some(item => item.id === state.terminalMachineId)) {
+        state.terminalPhase = "failed";
+        state.terminalError = "No such server.";
+        updateTerminalStatus();
+      } else {
+        state.terminalStartedId = state.terminalMachineId;
+        void startTerminalSession(state.terminalMachineId);
+      }
+    }
+  } else {
+    stopTerminalPolling();
+    if (state.page !== "desktop") window.UUViewer.close();
+  }
+
+  if (state.page === "files" && state.fileMachineId && !state.fileLoaded && !state.fileBusy) void loadFiles();
+  if (state.page === "servers") {
+    ensureVncDiscoveryPolling();
+    if (!state.vncDiscoveryLoaded && !state.vncDiscoveryBusy) void loadVncDiscovery();
+  } else stopVncDiscoveryPolling();
 }
 
 function setPage(id) {
@@ -524,6 +978,455 @@ function stopMonitorPolling() {
   if (monitorTimer === null) return;
   clearInterval(monitorTimer);
   monitorTimer = null;
+}
+
+let desktopTimer = null;
+let desktopRefreshBusy = false;
+let desktopInputQueue = Promise.resolve();
+let uuViewerKey = null;
+let uuViewerStart = Promise.resolve();
+let uuSignalQueue = Promise.resolve();
+let terminalTimer = null;
+let terminalInputQueue = Promise.resolve();
+let terminalDecoder = new TextDecoder();
+let vncDiscoveryTimer = null;
+
+
+function ensureDesktopPolling() {
+  if (desktopTimer !== null) return;
+  desktopTimer = setInterval(refreshDesktop, 250);
+}
+
+function stopDesktopPolling() {
+  if (desktopTimer === null) return;
+  clearInterval(desktopTimer);
+  desktopTimer = null;
+}
+
+function updateDesktopStatus() {
+  const status = document.querySelector("[data-vnc-status]");
+  const error = document.querySelector("[data-vnc-error]");
+  if (status) status.textContent = state.desktopPhase || "connecting";
+  if (error) error.textContent = state.desktopError || "";
+}
+
+function paintDesktopFrame(frame) {
+  const canvas = document.querySelector("[data-vnc-canvas]");
+  if (!canvas || !frame) return;
+  if (canvas.width !== frame.width || canvas.height !== frame.height) {
+    canvas.width = frame.width;
+    canvas.height = frame.height;
+  }
+  const binary = atob(frame.rgba);
+  const pixels = new Uint8ClampedArray(binary.length);
+  for (let i = 0; i < binary.length; i++) pixels[i] = binary.charCodeAt(i);
+  canvas.getContext("2d").putImageData(new ImageData(pixels, frame.width, frame.height), 0, 0);
+}
+
+function closeUUViewer() {
+  window.UUViewer.close();
+  uuViewerKey = null;
+  uuViewerStart = Promise.resolve();
+  uuSignalQueue = Promise.resolve();
+}
+
+async function startUuViewer(id, purpose, snapshot) {
+  const key = `${id}:${purpose}`;
+  if (uuViewerKey !== key) {
+    closeUUViewer();
+    uuViewerKey = key;
+    const updateState = phase => {
+      if (state.page === "desktop" && state.desktopMachineId === id) {
+        state.desktopPhase = phase;
+        updateDesktopStatus();
+      } else if (state.page === "terminal" && state.terminalMachineId === id) {
+        state.terminalPhase = phase;
+        updateTerminalStatus();
+      }
+    };
+    const updateError = error => {
+      if (state.page === "desktop" && state.desktopMachineId === id) {
+        state.desktopError = error;
+        updateDesktopStatus();
+      } else if (state.page === "terminal" && state.terminalMachineId === id) {
+        state.terminalError = error;
+        updateTerminalStatus();
+      }
+    };
+    uuViewerStart = window.UUViewer.connect(snapshot.bootstrap, {
+      id,
+      purpose,
+      signal: Api.desktopSignal,
+      onState: updateState,
+      onError: updateError,
+      onTerminalOutput: appendTerminalOutput,
+      onTerminalExit: code => { state.terminalPhase = `closed (exit ${code ?? "?"})`; updateTerminalStatus(); },
+    });
+  }
+  try { await uuViewerStart; }
+  catch (error) {
+    if (uuViewerKey === key) closeUUViewer();
+    throw error;
+  }
+  state.desktopSignalVersion = Math.max(state.desktopSignalVersion, snapshot.version ?? 0);
+  if (snapshot.signals?.length) {
+    uuSignalQueue = uuSignalQueue.then(() => window.UUViewer.handleSignals(snapshot.signals)).catch(error => {
+      if (uuViewerKey === key) {
+        if (state.page === "desktop") { state.desktopError = String(error); updateDesktopStatus(); }
+        if (state.page === "terminal") { state.terminalError = String(error); updateTerminalStatus(); }
+      }
+    });
+    await uuSignalQueue;
+  }
+}
+
+async function refreshDesktop() {
+  const id = state.desktopMachineId;
+  if (state.page !== "desktop" || !id || !Api.available || state.machines === null || desktopRefreshBusy) return;
+  desktopRefreshBusy = true;
+  try {
+    const machine = allMachines().find(item => item.id === id);
+    if (!machine) {
+      state.desktopPhase = "failed";
+      state.desktopError = "No such server.";
+      updateDesktopStatus();
+      return;
+    }
+    const isUU = machine?.remoteDesktopProtocol === "uu-remote";
+    const result = await Api.desktop(id, isUU ? state.desktopSignalVersion : state.desktopFrameVersion);
+    if (state.page !== "desktop" || state.desktopMachineId !== id) return;
+    if (!result || result.error) {
+      state.desktopPhase = "failed";
+      state.desktopError = result?.error ?? "Could not reach the host.";
+    } else {
+      state.desktopPhase = result.phase ?? "connecting";
+      state.desktopError = result.error ?? null;
+      if (isUU) {
+        state.desktopSignalVersion = Math.max(state.desktopSignalVersion, result.version ?? 0);
+        if (result.bootstrap) await startUuViewer(id, "desktop", result);
+      } else {
+        state.desktopFrameVersion = result.frameVersion ?? state.desktopFrameVersion;
+        if (result.frame) {
+          state.desktopFrame = result.frame;
+          paintDesktopFrame(result.frame);
+        }
+      }
+    }
+    updateDesktopStatus();
+  } catch (error) {
+    if (state.page === "desktop" && state.desktopMachineId === id) {
+      state.desktopPhase = "failed";
+      state.desktopError = String(error);
+      updateDesktopStatus();
+    }
+  } finally {
+    desktopRefreshBusy = false;
+  }
+}
+
+function ensureTerminalPolling() {
+  if (terminalTimer !== null) return;
+  terminalTimer = setInterval(refreshTerminal, 150);
+}
+
+function stopTerminalPolling() {
+  if (terminalTimer === null) return;
+  clearInterval(terminalTimer);
+  terminalTimer = null;
+}
+
+async function startTerminalSession(id) {
+  const machine = allMachines().find(item => item.id === id);
+  if (!machine) { state.terminalError = "No such server."; updateTerminalStatus(); return; }
+  state.terminalTransport = machine.transport === "uu-remote" ? "uu-remote" : "ssh";
+  try {
+    if (state.terminalTransport === "uu-remote") {
+      const result = await Api.startDesktop(id, "terminal");
+      if (state.page !== "terminal" || state.terminalMachineId !== id) return;
+      if (!result || result.error) throw new Error(result?.error ?? "Could not start the UU Remote terminal.");
+      state.terminalPhase = result.phase ?? "connecting";
+      state.terminalError = null;
+      state.desktopSignalVersion = 0;
+      if (result.bootstrap) await startUuViewer(id, "terminal", result);
+    } else {
+      const result = await Api.startTerminal(id);
+      if (state.page !== "terminal" || state.terminalMachineId !== id) return;
+      if (!result || result.error) throw new Error(result?.error ?? "Could not start the SSH terminal.");
+      state.terminalPhase = "connected";
+      state.terminalError = null;
+      if (result.banner) appendTerminalOutput(`${result.banner}\r\n`);
+      resizeTerminalView();
+    }
+    updateTerminalStatus();
+    refreshTerminal();
+  } catch (error) {
+    state.terminalPhase = "failed";
+    state.terminalError = String(error);
+    updateTerminalStatus();
+  }
+}
+
+async function refreshTerminal() {
+  const id = state.terminalMachineId;
+  if (state.page !== "terminal" || !id || !Api.available || !state.terminalTransport || state.terminalPollBusy) return;
+  state.terminalPollBusy = true;
+  try {
+    if (state.terminalTransport === "uu-remote") {
+      const result = await Api.desktop(id, state.desktopSignalVersion);
+      if (state.page !== "terminal" || state.terminalMachineId !== id) return;
+      if (!result || result.error) throw new Error(result?.error ?? "UU Remote terminal disconnected.");
+      state.terminalPhase = result.phase ?? state.terminalPhase;
+      state.terminalError = null;
+      state.desktopSignalVersion = Math.max(state.desktopSignalVersion, result.version ?? 0);
+      if (result.bootstrap) await startUuViewer(id, "terminal", result);
+    } else {
+      const result = await Api.terminal(id);
+      if (state.page !== "terminal" || state.terminalMachineId !== id) return;
+      if (!result || result.error) throw new Error(result?.error ?? "SSH terminal disconnected.");
+      state.terminalPhase = result.phase ?? "connected";
+      if (result.output) appendTerminalOutput(terminalDecoder.decode(Uint8Array.from(atob(result.output), char => char.charCodeAt(0)), { stream: true }));
+    }
+    updateTerminalStatus();
+  } catch (error) {
+    if (state.page === "terminal" && state.terminalMachineId === id) {
+      state.terminalPhase = "failed";
+      state.terminalError = String(error);
+      updateTerminalStatus();
+    }
+  } finally {
+    state.terminalPollBusy = false;
+  }
+}
+
+function appendTerminalOutput(text) {
+  if (!text) return;
+  state.terminalOutput = (state.terminalOutput + text).slice(-100000);
+  const output = document.querySelector("[data-terminal-output]");
+  if (output) {
+    output.textContent += text;
+    if (output.textContent.length > 100000) output.textContent = output.textContent.slice(-100000);
+    output.scrollTop = output.scrollHeight;
+  }
+}
+
+function updateTerminalStatus() {
+  const status = document.querySelector("[data-terminal-status]");
+  const error = document.querySelector("[data-terminal-error]");
+  const input = document.querySelector("[data-terminal-input]");
+  const send = document.querySelector("[data-terminal-send]");
+  const connected = state.terminalPhase === "connected";
+  if (status) status.textContent = state.terminalPhase || "connecting";
+  if (error) error.textContent = state.terminalError || "";
+  if (input) input.disabled = !connected;
+  if (send) send.disabled = !connected;
+}
+
+function queueTerminalRequest(id, action) {
+  terminalInputQueue = terminalInputQueue.then(async () => {
+    if (state.page !== "terminal" || state.terminalMachineId !== id) return;
+    const result = await action();
+    if (result?.error) throw new Error(result.error);
+  }).catch(error => {
+    if (state.page === "terminal" && state.terminalMachineId === id) {
+      state.terminalPhase = "failed";
+      state.terminalError = String(error);
+      updateTerminalStatus();
+    }
+  });
+}
+
+function resizeTerminalView() {
+  const output = document.querySelector("[data-terminal-output]");
+  if (!output || !state.terminalMachineId || !state.terminalTransport) return;
+  const id = state.terminalMachineId;
+  const columns = Math.max(20, Math.floor((output.clientWidth - 32) / 8));
+  const rows = Math.max(5, Math.floor(output.clientHeight / 19));
+  if (state.terminalTransport === "uu-remote") window.UUViewer.resizeTerminal(columns, rows);
+  else if (state.terminalPhase === "connected") queueTerminalRequest(id, () => Api.resizeTerminal(id, columns, rows));
+}
+
+function sendTerminalText(text) {
+  if (!text || !state.terminalMachineId || state.terminalPhase !== "connected") return;
+  const id = state.terminalMachineId;
+  if (state.terminalTransport === "uu-remote") window.UUViewer.sendTerminalInput(text);
+  else if (state.terminalTransport === "ssh") queueTerminalRequest(id, () => Api.sendTerminal(id, text));
+}
+
+function mountTerminal(content) {
+  const input = content.querySelector("[data-terminal-input]");
+  if (!input) return;
+  const output = content.querySelector("[data-terminal-output]");
+  if (output) output.scrollTop = output.scrollHeight;
+  updateTerminalStatus();
+  input.addEventListener("input", () => {
+    const text = input.value;
+    input.value = "";
+    sendTerminalText(text);
+  });
+  input.addEventListener("keydown", event => {
+    const keys = { Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", Delete: "\x1b[3~", Home: "\x1b[H", End: "\x1b[F" };
+    let text = keys[event.key];
+    if (event.ctrlKey && event.key.toLowerCase() === "c") text = "\x03";
+    if (event.ctrlKey && event.key.toLowerCase() === "d") text = "\x04";
+    if (text !== undefined) {
+      event.preventDefault();
+      sendTerminalText(text);
+    }
+  });
+  input.focus();
+  window.onresize = resizeTerminalView;
+}
+
+function sendDesktopInput(send) {
+  desktopInputQueue = desktopInputQueue.then(send).catch(() => {});
+}
+
+function keySymFor(event) {
+  const special = {
+    Backspace: 0xff08, Tab: 0xff09, Enter: 0xff0d, Escape: 0xff1b, Delete: 0xffff,
+    Home: 0xff50, ArrowLeft: 0xff51, ArrowUp: 0xff52, ArrowRight: 0xff53, ArrowDown: 0xff54,
+    PageUp: 0xff55, PageDown: 0xff56, End: 0xff57, Insert: 0xff63,
+    Shift: 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb,
+  };
+  if (special[event.key]) return special[event.key];
+  if (/^F([1-9]|1[0-2])$/.test(event.key)) return 0xffbd + Number(event.key.slice(1));
+  if (event.key.length === 1) {
+    const code = event.key.codePointAt(0);
+    return code <= 0xff ? code : 0x01000000 | code;
+  }
+  return null;
+}
+
+function mountDesktop(content) {
+  const canvas = content.querySelector("[data-vnc-canvas]");
+  if (!canvas) return;
+  if (state.desktopFrame) paintDesktopFrame(state.desktopFrame);
+  updateDesktopStatus();
+
+  const machineId = state.desktopMachineId;
+  let lastMove = 0;
+  const pressed = new Map();
+  const point = event => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
+  };
+  canvas.addEventListener("pointermove", event => {
+    const now = performance.now();
+    if (now - lastMove < 30) return;
+    lastMove = now;
+    const position = point(event);
+    sendDesktopInput(() => Api.desktopPointer(machineId, position));
+  });
+  canvas.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    canvas.focus();
+    canvas.setPointerCapture(event.pointerId);
+    const position = point(event);
+    sendDesktopInput(() => Api.desktopPointer(machineId, { ...position, button: event.button + 1, down: true }));
+  });
+  canvas.addEventListener("pointerup", event => {
+    const position = point(event);
+    sendDesktopInput(() => Api.desktopPointer(machineId, { ...position, button: event.button + 1, down: false }));
+  });
+  canvas.addEventListener("contextmenu", event => event.preventDefault());
+  canvas.addEventListener("keydown", event => {
+    const keySym = keySymFor(event);
+    if (keySym === null) return;
+    event.preventDefault();
+    if (!pressed.has(event.code)) {
+      pressed.set(event.code, keySym);
+      sendDesktopInput(() => Api.desktopKey(machineId, { keySym, down: true }));
+    }
+  });
+  canvas.addEventListener("keyup", event => {
+    const keySym = pressed.get(event.code);
+    if (keySym === undefined) return;
+    event.preventDefault();
+    pressed.delete(event.code);
+    sendDesktopInput(() => Api.desktopKey(machineId, { keySym, down: false }));
+  });
+  canvas.addEventListener("blur", () => {
+    for (const keySym of pressed.values()) {
+      sendDesktopInput(() => Api.desktopKey(machineId, { keySym, down: false }));
+    }
+    pressed.clear();
+  });
+}
+
+function mountUuDesktop(content) {
+  const video = content.querySelector("[data-uu-video]");
+  if (!video) return;
+  updateDesktopStatus();
+  const machineId = state.desktopMachineId;
+  const point = event => {
+    const rect = video.getBoundingClientRect();
+    const width = video.videoWidth || rect.width;
+    const height = video.videoHeight || rect.height;
+    const scale = Math.min(rect.width / width, rect.height / height);
+    const shownWidth = width * scale;
+    const shownHeight = height * scale;
+    return {
+      abs_x: Math.min(1, Math.max(0, (event.clientX - rect.left - (rect.width - shownWidth) / 2) / shownWidth)),
+      abs_y: Math.min(1, Math.max(0, (event.clientY - rect.top - (rect.height - shownHeight) / 2) / shownHeight)),
+    };
+  };
+  let lastMove = 0;
+  video.addEventListener("pointermove", event => {
+    if (performance.now() - lastMove < 30) return;
+    lastMove = performance.now();
+    window.UUViewer.sendInput({ action: "mouse_move_absolute", ...point(event) });
+  });
+  video.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    video.focus();
+    video.setPointerCapture(event.pointerId);
+    const button = [1, 4, 2, 8, 16][event.button] ?? 1;
+    window.UUViewer.sendInput({ action: "mouse_press", button });
+  });
+  video.addEventListener("pointerup", event => {
+    const button = [1, 4, 2, 8, 16][event.button] ?? 1;
+    window.UUViewer.sendInput({ action: "mouse_release", button });
+  });
+  video.addEventListener("contextmenu", event => event.preventDefault());
+  video.addEventListener("wheel", event => {
+    event.preventDefault();
+    window.UUViewer.sendInput({ action: "mouse_scroll", delta_x: Math.round(event.deltaX), delta_y: -Math.round(event.deltaY) });
+  }, { passive: false });
+
+  const keyboard = document.createElement("textarea");
+  keyboard.setAttribute("aria-label", "UU Remote keyboard input");
+  keyboard.autocapitalize = "off";
+  keyboard.autocomplete = "off";
+  keyboard.spellcheck = false;
+  keyboard.style.cssText = "position:fixed;left:-1000px;top:0;width:1px;height:1px;opacity:0";
+  content.appendChild(keyboard);
+  const pressed = new Map();
+  keyboard.addEventListener("input", () => {
+    const text = keyboard.value;
+    keyboard.value = "";
+    if (text) window.UUViewer.sendInput({ action: "text_input", content: text });
+  });
+  keyboard.addEventListener("keydown", event => {
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) return;
+    if (event.keyCode === 229 || !event.keyCode) return;
+    event.preventDefault();
+    if (!pressed.has(event.code)) {
+      pressed.set(event.code, event.keyCode);
+      window.UUViewer.sendKey(event.keyCode, true);
+    }
+  });
+  keyboard.addEventListener("keyup", event => {
+    const key = pressed.get(event.code);
+    if (key === undefined) return;
+    event.preventDefault();
+    pressed.delete(event.code);
+    window.UUViewer.sendKey(key, false);
+  });
+  keyboard.addEventListener("blur", () => {
+    for (const key of pressed.values()) window.UUViewer.sendKey(key, false);
+    pressed.clear();
+  });
+  video.addEventListener("pointerdown", () => keyboard.focus());
 }
 
 async function refreshMonitor() {
@@ -553,7 +1456,7 @@ async function refreshMonitor() {
   if (waiting) setTimeout(refreshMonitor, 400);
 }
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
   const nav = event.target.closest("[data-nav]");
   if (nav) {
     event.preventDefault();
@@ -568,8 +1471,134 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // Monitor: start (or reattach to) that server's live session, then show the
-  // page. This is ServerTool.monitor.show(machine) in the Swift app.
+
+  const desktopTarget = event.target.closest("[data-desktop]");
+  if (desktopTarget) {
+    event.preventDefault();
+    openDesktop(desktopTarget.dataset.desktop);
+    return;
+  }
+
+  if (event.target.closest("[data-vnc-refresh]")) {
+    event.preventDefault();
+    await loadVncDiscovery(true);
+    return;
+  }
+  const nearbyHost = event.target.closest("[data-vnc-add]");
+  if (nearbyHost) {
+    event.preventDefault();
+    const host = state.vncDiscovery?.hosts.find(item => item.id === nearbyHost.dataset.vncAdd);
+    if (host) openSheet("add-server", {
+      name: host.displayName || host.name,
+      address: host.hostName,
+      port: "22",
+      vncPort: String(host.port),
+      remoteDesktopProtocol: "vnc",
+    });
+    return;
+  }
+
+  if (event.target.closest("[data-desktop-back]")) {
+    event.preventDefault();
+    history.replaceState(null, "", "#servers");
+    loadRoute();
+    render();
+    return;
+  }
+
+  if (event.target.closest("[data-desktop-stop]")) {
+    event.preventDefault();
+    const id = state.desktopMachineId;
+    closeUUViewer();
+    const result = await Api.stopDesktop(id);
+    state.desktopStartedId = null;
+    state.desktopPhase = "idle";
+    state.desktopError = result?.error ?? null;
+    state.desktopFrameVersion = 0;
+    state.desktopSignalVersion = 0;
+    state.desktopFrame = null;
+    if (result?.error) toast(result.error);
+    updateDesktopStatus();
+    return;
+  }
+
+  if (event.target.closest("[data-terminal-back], [data-files-back]")) {
+    event.preventDefault();
+    history.replaceState(null, "", "#servers");
+    loadRoute();
+    render();
+    return;
+  }
+  if (event.target.closest("[data-terminal-stop]")) {
+    event.preventDefault();
+    const id = state.terminalMachineId;
+    closeUUViewer();
+    const result = state.terminalTransport === "uu-remote" ? await Api.stopDesktop(id) : await Api.stopTerminal(id);
+    state.terminalStartedId = null;
+    state.terminalPhase = "idle";
+    state.terminalError = result?.error ?? null;
+    updateTerminalStatus();
+    return;
+  }
+
+  if (event.target.closest("[data-files-new-folder]")) {
+    event.preventDefault();
+    const name = window.prompt("New folder name")?.trim();
+    if (!name) return;
+    if (name.includes("/") || name.includes("\\")) {
+      state.fileError = "A folder name cannot contain a slash.";
+      render();
+      return;
+    }
+    const directory = state.filePath.endsWith("/") ? state.filePath : `${state.filePath}/`;
+    const path = `${directory}${name}`;
+    const result = await Api.createDirectory(state.fileMachineId, path);
+    if (!result || result.error) {
+      state.fileError = result?.error ?? "Could not create that folder.";
+      render();
+      return;
+    }
+    await loadFiles();
+    return;
+  }
+  if (event.target.closest("[data-files-refresh]")) {
+    event.preventDefault();
+    await loadFiles();
+    return;
+  }
+  if (event.target.closest("[data-files-up]")) {
+    event.preventDefault();
+    const path = state.filePath.replace(/\/+$/, "") || "/";
+    const parent = path === "/" ? "/" : path.slice(0, path.lastIndexOf("/")) || "/";
+    state.filePath = parent;
+    await loadFiles();
+    return;
+  }
+  const directory = event.target.closest("[data-file-directory]");
+  if (directory) {
+    event.preventDefault();
+    state.filePath = directory.dataset.fileDirectory;
+    await loadFiles();
+    return;
+  }
+  const download = event.target.closest("[data-file-download]");
+  if (download) {
+    event.preventDefault();
+    const id = state.fileMachineId;
+    const path = download.dataset.fileDownload;
+    const result = await Api.downloadFile(id, path);
+    if (!result?.blob) { state.fileError = result?.error ?? "Could not download this file."; render(); return; }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(result.blob);
+    const disposition = result.disposition ?? "";
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    link.download = encodedName ? decodeURIComponent(encodedName) : path.split("/").pop();
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    return;
+  }
+
+  // Monitor: start (or reattach to) that server's live session, then show the page.
   const monitorTarget = event.target.closest("[data-monitor]");
   if (monitorTarget) {
     event.preventDefault();
@@ -577,19 +1606,17 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // Connect and Files need the SSH session too; Monitor is the page that exists,
-  // so Connect opens it as well rather than pretending to do something.
   const connectTarget = event.target.closest("[data-connect]");
   if (connectTarget) {
     event.preventDefault();
-    openMonitor(connectTarget.dataset.connect);
+    openTerminal(connectTarget.dataset.connect);
     return;
   }
 
   const filesTarget = event.target.closest("[data-files]");
   if (filesTarget) {
     event.preventDefault();
-    toast("File transfer is not built yet.");
+    openFiles(filesTarget.dataset.files);
     return;
   }
 
@@ -605,9 +1632,46 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest("[data-new-folder]")) {
+    event.preventDefault();
+    openSheet("add-folder");
+    return;
+  }
+
   if (event.target.closest("[data-new-identity]")) {
     event.preventDefault();
     openSheet("add-identity");
+    return;
+  }
+
+  const moveServer = event.target.closest("[data-move-server]");
+  if (moveServer) {
+    event.preventDefault();
+    state.movingMachineId = moveServer.dataset.moveServer;
+    openSheet("move-server");
+    return;
+  }
+
+  const renameFolder = event.target.closest("[data-rename-folder]");
+  if (renameFolder) {
+    event.preventDefault();
+    const name = renameFolder.dataset.renameFolder;
+    const newName = window.prompt("Rename Folder", name);
+    if (newName === null) return;
+    const result = await Api.renameFolder(name, newName);
+    if (result?.error) toast(result.error);
+    await loadMachines();
+    return;
+  }
+
+  const removeFolder = event.target.closest("[data-remove-folder]");
+  if (removeFolder) {
+    event.preventDefault();
+    const name = removeFolder.dataset.removeFolder;
+    if (!window.confirm(`Delete "${name}" and move its servers to Ungrouped?`)) return;
+    const result = await Api.removeFolder(name);
+    if (result?.error) toast(result.error);
+    await loadMachines();
     return;
   }
 
@@ -670,9 +1734,10 @@ document.addEventListener("submit", async (event) => {
 
 /* ------------------------------------------------------------ sheets */
 
-function openSheet(kind) {
+function openSheet(kind, vncDraft = null) {
   state.sheet = kind;
   state.sheetError = null;
+  state.vncDraft = vncDraft;
   render();
 }
 
@@ -682,8 +1747,9 @@ function openSheet(kind) {
 async function loadMachines() {
   if (!Api.available) {
     state.machines = null;
+    state.folders = null;
+    state.folderInfo = null;
     state.machinesError = null;
-    render();
     return;
   }
   const result = await Api.machines();
@@ -692,11 +1758,75 @@ async function loadMachines() {
     state.machines = [];
   } else {
     state.machines = result.machines ?? [];
+    if (!state.uuBusy) state.uuRemote = result.uuRemote ?? state.uuRemote;
+    state.folders = result.folders ?? [];
+    state.folderInfo = result.folderInfo ?? [];
     state.machinesError = result.loadFailed ? result.loadError : null;
   }
   render();
 }
 
+async function loadFiles() {
+  if (!Api.available || !state.fileMachineId || state.fileBusy || state.machines === null) return;
+  const machine = allMachines().find(item => item.id === state.fileMachineId);
+  if (!machine) {
+    state.fileLoaded = true;
+    state.fileError = "No such server.";
+    render();
+    return;
+  }
+  if (!state.filePath) state.filePath = machine.fileTransferLoginPath || "/";
+  state.fileBusy = true;
+  state.fileError = null;
+  try {
+    const result = await Api.listFiles(state.fileMachineId, state.filePath || "/");
+    if (!result || result.error) throw new Error(result?.error ?? "Could not list this folder.");
+    state.filePath = result.path ?? state.filePath;
+    state.fileEntries = result.entries ?? [];
+    state.fileLoaded = true;
+  } catch (error) {
+    state.fileEntries = [];
+    state.fileLoaded = true;
+    state.fileError = String(error);
+  } finally {
+    state.fileBusy = false;
+    render();
+  }
+}
+
+function ensureVncDiscoveryPolling() {
+  if (!Api.available || vncDiscoveryTimer !== null) return;
+  vncDiscoveryTimer = setInterval(() => void loadVncDiscovery(), 3000);
+}
+
+function stopVncDiscoveryPolling() {
+  if (vncDiscoveryTimer === null) return;
+  clearInterval(vncDiscoveryTimer);
+  vncDiscoveryTimer = null;
+}
+
+async function loadVncDiscovery(refresh = false) {
+  if (!Api.available || state.vncDiscoveryBusy) return;
+  state.vncDiscoveryBusy = true;
+  updateVncNearby();
+  try {
+    const result = refresh ? await Api.refreshVncDiscovery() : await Api.vncDiscovery();
+    if (!result || result.error) throw new Error(result?.error ?? "Could not browse for nearby VNC hosts.");
+    state.vncDiscovery = result;
+    state.vncDiscoveryError = result.failure ?? null;
+  } catch (error) {
+    state.vncDiscoveryError = String(error);
+  } finally {
+    state.vncDiscoveryBusy = false;
+    state.vncDiscoveryLoaded = true;
+    updateVncNearby();
+  }
+}
+
+function updateVncNearby() {
+  const current = document.querySelector("[data-vnc-nearby]");
+  if (current) current.outerHTML = nearbyVncCard();
+}
 async function loadIdentities() {
   if (!Api.available) {
     state.identities = null;
@@ -742,6 +1872,46 @@ async function openMonitor(machineId) {
   }
 }
 
+function openDesktop(machineId) {
+  state.desktopMachineId = machineId;
+  state.desktopStartedId = null;
+  state.desktopPhase = "connecting";
+  state.desktopError = null;
+  state.desktopFrameVersion = 0;
+  state.desktopSignalVersion = 0;
+  state.desktopFrame = null;
+  history.replaceState(null, "", `#desktop/${encodeURIComponent(machineId)}`);
+  loadRoute();
+  render();
+}
+
+function openTerminal(machineId) {
+  state.terminalMachineId = machineId;
+  state.terminalStartedId = null;
+  state.terminalTransport = null;
+  state.terminalPhase = "connecting";
+  state.terminalError = null;
+  state.terminalOutput = "";
+  terminalDecoder = new TextDecoder();
+  state.desktopSignalVersion = 0;
+  history.replaceState(null, "", `#terminal/${encodeURIComponent(machineId)}`);
+  loadRoute();
+  render();
+}
+
+function openFiles(machineId) {
+  const machine = allMachines().find(item => item.id === machineId);
+  state.fileMachineId = machineId;
+  state.filePath = machine?.fileTransferLoginPath || "/";
+  state.fileEntries = [];
+  state.fileError = null;
+  state.fileBusy = false;
+  state.fileLoaded = false;
+  history.replaceState(null, "", `#files/${encodeURIComponent(machineId)}`);
+  loadRoute();
+  render();
+}
+
 /** A one-line message in the corner; used where a feature is not built yet. */
 function toast(message) {
   const existing = document.querySelector(".rx-toast");
@@ -756,6 +1926,54 @@ function toast(message) {
 /* ------------------------------------------------------------ form submits */
 
 document.addEventListener("submit", async (event) => {
+  const terminalForm = event.target.closest("[data-terminal-form]");
+  if (terminalForm) {
+    event.preventDefault();
+    const input = terminalForm.querySelector("[data-terminal-input]");
+    const text = input?.value ?? "";
+    if (input) input.value = "";
+    sendTerminalText(text ? `${text}\r` : "\r");
+    return;
+  }
+
+  const filesPathForm = event.target.closest("[data-files-path-form]");
+  if (filesPathForm) {
+    event.preventDefault();
+    state.filePath = new FormData(filesPathForm).get("path")?.toString().trim() || "/";
+    await loadFiles();
+    return;
+  }
+
+  const addFolder = event.target.closest("[data-add-folder]");
+  if (addFolder) {
+    event.preventDefault();
+    const name = new FormData(addFolder).get("name")?.toString() ?? "";
+    const result = await Api.createFolder(name);
+    if (!result || result.error) {
+      state.sheetError = result?.error ?? "Could not create that folder.";
+      render();
+      return;
+    }
+    closeSheet();
+    await loadMachines();
+    return;
+  }
+
+  const moveServerForm = event.target.closest("[data-move-server-form]");
+  if (moveServerForm) {
+    event.preventDefault();
+    const folder = new FormData(moveServerForm).get("folder")?.toString() ?? "";
+    const result = await Api.moveMachine(state.movingMachineId, folder);
+    if (!result || result.error) {
+      state.sheetError = result?.error ?? "Could not move that server.";
+      render();
+      return;
+    }
+    closeSheet();
+    await loadMachines();
+    return;
+  }
+
   const addServer = event.target.closest("[data-add-server]");
   if (addServer) {
     event.preventDefault();
@@ -765,7 +1983,17 @@ document.addEventListener("submit", async (event) => {
       address: data.get("address")?.toString() ?? "",
       port: data.get("port")?.toString() || "22",
       group: data.get("group")?.toString() ?? "",
+      fileTransferLoginPath: data.get("fileTransferLoginPath")?.toString().trim() || "/",
       comment: data.get("comment")?.toString() ?? "",
+      transport: data.get("transport")?.toString() ?? "direct",
+      cloudflareServiceTokenId: data.get("cloudflareServiceTokenId")?.toString() ?? "",
+      cloudflareServiceTokenSecret: data.get("cloudflareServiceTokenSecret")?.toString() ?? "",
+      remoteDesktopProtocol: data.get("remoteDesktopProtocol")?.toString() ?? "none",
+      vncPort: data.get("vncPort")?.toString() || "5900",
+      vncUsername: data.get("vncUsername")?.toString() ?? "",
+      vncPassword: data.get("vncPassword")?.toString() ?? "",
+      vncOverSSH: data.get("vncOverSSH") === "on",
+      vncShared: data.get("vncShared") === "on",
     });
     if (!result || result.error) {
       state.sheetError = result?.error ?? "Could not save that server.";
@@ -812,9 +2040,34 @@ document.addEventListener("submit", async (event) => {
   }
 });
 
+document.addEventListener("change", async event => {
+  const picker = event.target.closest("[data-file-upload]");
+  if (!picker || !picker.files?.length || !Api.available || !state.fileMachineId) return;
+  const files = Array.from(picker.files);
+  picker.value = "";
+  state.fileBusy = true;
+  state.fileError = null;
+  render();
+  for (const file of files) {
+    const directory = state.filePath.endsWith("/") ? state.filePath : `${state.filePath}/`;
+    const result = await Api.uploadFile(state.fileMachineId, `${directory}${file.name}`, file);
+    if (!result || result.error) {
+      state.fileError = result?.error ?? `Could not upload ${file.name}.`;
+      break;
+    }
+  }
+  const uploadError = state.fileError;
+  state.fileBusy = false;
+  state.fileLoaded = false;
+  await loadFiles();
+  if (uploadError) { state.fileError = uploadError; render(); }
+});
+
 function closeSheet() {
   state.sheet = null;
   state.sheetError = null;
+  state.movingMachineId = null;
+  state.vncDraft = null;
   render();
 }
 
@@ -824,6 +2077,51 @@ function sheetMarkup() {
   const error = state.sheetError
     ? `<div class="rx-help-text rx-help-text--error" style="margin-bottom:var(--space-2)">${escapeHtml(state.sheetError)}</div>`
     : "";
+
+  if (state.sheet === "add-folder") {
+    return `<div class="rx-scrim">
+      <form class="rx-sheet" data-add-folder>
+        <div class="rx-sheet__head">
+          <span class="rx-sheet__title">New Folder</span>
+          <span class="rx-help-text">Folders keep related servers together.</span>
+        </div>
+        <div class="rx-sheet__body rx-stack-3">
+          ${error}
+          <label class="rx-stack-1"><span class="rx-caps-label">Name</span>
+            <span class="rx-field"><input name="name" placeholder="Production" required autocomplete="off" /></span></label>
+        </div>
+        <div class="rx-sheet__footer">
+          <button type="button" class="rx-button rx-button--plain" data-close-sheet>Cancel</button>
+          <button type="submit" class="rx-button rx-button--primary">Create Folder</button>
+        </div>
+      </form>
+    </div>`;
+  }
+
+  if (state.sheet === "move-server") {
+    const machine = allMachines().find(item => item.id === state.movingMachineId);
+    const current = machine?.group === "Ungrouped" ? "" : machine?.group ?? "";
+    const options = ["", ...(state.folders ?? [])].map(name =>
+      `<option value="${escapeHtml(name)}"${name === current ? " selected" : ""}>${escapeHtml(name || "Ungrouped")}</option>`
+    ).join("");
+    return `<div class="rx-scrim">
+      <form class="rx-sheet" data-move-server-form>
+        <div class="rx-sheet__head">
+          <span class="rx-sheet__title">Move Server</span>
+          <span class="rx-help-text">${escapeHtml(machine?.name ?? "")}</span>
+        </div>
+        <div class="rx-sheet__body rx-stack-3">
+          ${error}
+          <label class="rx-stack-1"><span class="rx-caps-label">Folder</span>
+            <span class="rx-field"><select name="folder">${options}</select></span></label>
+        </div>
+        <div class="rx-sheet__footer">
+          <button type="button" class="rx-button rx-button--plain" data-close-sheet>Cancel</button>
+          <button type="submit" class="rx-button rx-button--primary">Move</button>
+        </div>
+      </form>
+    </div>`;
+  }
 
   if (state.sheet === "add-server") {
     return `<div class="rx-scrim">
@@ -835,17 +2133,43 @@ function sheetMarkup() {
         <div class="rx-sheet__body rx-stack-3">
           ${error}
           <label class="rx-stack-1"><span class="rx-caps-label">Name</span>
-            <span class="rx-field"><input name="name" placeholder="web-01" autocomplete="off" /></span></label>
+            <span class="rx-field"><input name="name" value="${escapeHtml(state.vncDraft?.name ?? "")}" placeholder="web-01" autocomplete="off" /></span></label>
           <label class="rx-stack-1"><span class="rx-caps-label">Address</span>
-            <span class="rx-field"><input name="address" placeholder="203.0.113.10" required autocomplete="off" /></span></label>
+            <span class="rx-field"><input name="address" value="${escapeHtml(state.vncDraft?.address ?? "")}" placeholder="203.0.113.10" required autocomplete="off" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Transport</span>
+            <span class="rx-field"><select name="transport"><option value="direct">Direct (TCP)</option><option value="cloudflare-access">Cloudflare Access</option></select></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Cloudflare Access Client ID</span>
+            <span class="rx-field"><input name="cloudflareServiceTokenId" autocomplete="off" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Cloudflare Access Client Secret</span>
+            <span class="rx-field"><input name="cloudflareServiceTokenSecret" type="password" autocomplete="new-password" /></span></label>
           <div class="rx-row-3">
             <label class="rx-stack-1" style="width:110px"><span class="rx-caps-label">Port</span>
-              <span class="rx-field"><input name="port" value="22" inputmode="numeric" /></span></label>
+              <span class="rx-field"><input name="port" value="${escapeHtml(state.vncDraft?.port ?? "22")}" inputmode="numeric" /></span></label>
             <label class="rx-stack-1" style="flex:1"><span class="rx-caps-label">Group</span>
               <span class="rx-field"><input name="group" placeholder="Production" autocomplete="off" /></span></label>
           </div>
+          <label class="rx-stack-1"><span class="rx-caps-label">SFTP Start Folder</span>
+            <span class="rx-field"><input name="fileTransferLoginPath" value="${escapeHtml(state.vncDraft?.fileTransferLoginPath ?? "/")}" placeholder="/home/user" autocomplete="off" /></span></label>
           <label class="rx-stack-1"><span class="rx-caps-label">Note</span>
             <span class="rx-field"><input name="comment" placeholder="What runs here" autocomplete="off" /></span></label>
+          <label class="rx-stack-1"><span class="rx-caps-label">Remote Desktop</span>
+            <span class="rx-field"><select name="remoteDesktopProtocol"><option value="none"${state.vncDraft?.remoteDesktopProtocol === "vnc" ? "" : " selected"}>None</option><option value="vnc"${state.vncDraft?.remoteDesktopProtocol === "vnc" ? " selected" : ""}>VNC / Screen Sharing</option></select></span></label>
+          <div class="rx-row-3">
+            <label class="rx-stack-1" style="width:110px"><span class="rx-caps-label">VNC Port</span>
+              <span class="rx-field"><input name="vncPort" value="${escapeHtml(state.vncDraft?.vncPort ?? "5900")}" inputmode="numeric" /></span></label>
+            <label class="rx-stack-1" style="flex:1"><span class="rx-caps-label">VNC User Name</span>
+              <span class="rx-field"><input name="vncUsername" autocomplete="off" /></span></label>
+          </div>
+          <label class="rx-stack-1"><span class="rx-caps-label">VNC Password</span>
+            <span class="rx-field"><input name="vncPassword" type="password" autocomplete="new-password" /></span></label>
+          <label class="rx-row-2" style="gap:8px">
+            <input type="checkbox" name="vncOverSSH" />
+            <span class="rx-body">Connect VNC through an SSH local forward</span>
+          </label>
+          <label class="rx-row-2" style="gap:8px">
+            <input type="checkbox" name="vncShared" checked />
+            <span class="rx-body">Allow other VNC viewers to stay connected</span>
+          </label>
         </div>
         <div class="rx-sheet__footer">
           <button type="button" class="rx-button rx-button--plain" data-close-sheet>Cancel</button>
@@ -905,8 +2229,51 @@ window.rxSetDark = (dark) => {
  * hash is reserved for the page; both feed the same params, hash wins.
  */
 function loadRoute() {
-  const [page, hashQuery] = (location.hash.slice(1) || "home").split("?");
+  const [route, hashQuery] = (location.hash.slice(1) || "home").split("?");
+  const [requestedPage, encodedMachineId] = route.split("/");
+  const page = requestedPage;
   state.page = renderers[page] ? page : "home";
+  const machineId = encodedMachineId ? decodeURIComponent(encodedMachineId) : null;
+  const viewerPurpose = state.page === "desktop" ? "desktop" : state.page === "terminal" ? "terminal" : null;
+  const nextViewerKey = viewerPurpose && machineId ? `${machineId}:${viewerPurpose}` : null;
+  if (uuViewerKey && uuViewerKey !== nextViewerKey) closeUUViewer();
+  if (state.page === "desktop") {
+    if (state.desktopMachineId !== machineId) {
+      state.desktopMachineId = machineId;
+      state.desktopStartedId = null;
+      state.desktopPhase = "connecting";
+      state.desktopError = null;
+      state.desktopFrameVersion = 0;
+      state.desktopSignalVersion = 0;
+      state.desktopFrame = null;
+    }
+  } else state.desktopMachineId = null;
+
+  if (state.page === "terminal") {
+    if (state.terminalMachineId !== machineId) {
+      state.terminalMachineId = machineId;
+      state.terminalStartedId = null;
+      state.terminalTransport = null;
+      state.terminalPhase = "connecting";
+      state.terminalError = null;
+      state.terminalOutput = "";
+      terminalDecoder = new TextDecoder();
+      state.terminalPollBusy = false;
+      state.desktopSignalVersion = 0;
+    }
+  } else state.terminalMachineId = null;
+
+  if (state.page === "files") {
+    if (state.fileMachineId !== machineId) {
+      const machine = state.machines === null ? null : allMachines().find(item => item.id === machineId);
+      state.fileMachineId = machineId;
+      state.filePath = machine?.fileTransferLoginPath ?? "";
+      state.fileEntries = [];
+      state.fileError = null;
+      state.fileBusy = false;
+      state.fileLoaded = false;
+    }
+  } else state.fileMachineId = null;
   const params = new URLSearchParams(location.search);
   for (const [key, value] of new URLSearchParams(hashQuery || "")) {
     params.set(key, value);

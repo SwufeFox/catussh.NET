@@ -762,6 +762,12 @@ svg { width: 13px; height: 13px; flex: none; display: block; }
 .rx-table__group .rx-spacer { flex: 1 1 auto; }
 .rx-table__group .rx-axis { color: var(--rx-ink-tertiary); }
 
+.rx-folder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* Home grid */
 .rx-home-search {
   display: flex;
@@ -850,4 +856,32 @@ svg { width: 13px; height: 13px; flex: none; display: block; }
 @keyframes rx-toast-in {
   from { opacity: 0; transform: translate(-50%, 8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.uu-account { display: flex; flex-direction: column; gap: var(--space-3); }
+.uu-account .rx-section-title-row { margin-bottom: 0; }
+.uu-account__modes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.uu-account__form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+.uu-account__form > label { flex: 1 1 180px; }
+.uu-account__form details { flex: 1 0 100%; color: var(--rx-ink-secondary); font: var(--font-help); }
+.uu-account__form summary { cursor: pointer; }
+.uu-account__form--details { margin-top: var(--space-2); }
+.uu-account__qr { display: flex; align-items: center; gap: var(--space-4); min-height: 140px; }
+.uu-account__qr img,
+.uu-account__qr-empty { width: 140px; height: 140px; flex: none; border-radius: var(--radius-card); }
+.uu-account__qr img { background: #fff; image-rendering: pixelated; }
+.uu-account__qr-empty { display: grid; place-items: center; padding: var(--space-3); background: var(--rx-surface-sunken); color: var(--rx-ink-tertiary); text-align: center; font: var(--font-help); }
+.uu-account__qr-copy,
+.uu-account__device-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.uu-account__qr-copy strong,
+.uu-account__device-copy strong { color: var(--rx-ink); font: var(--font-body-strong); }
+.uu-account__qr-copy span,
+.uu-account__device-copy span,
+.uu-account__identity span { color: var(--rx-ink-secondary); font: var(--font-help); }
+.uu-account__identity { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.uu-account__identity > div { display: flex; flex: 1 1 180px; flex-direction: column; gap: 4px; min-width: 0; }
+.uu-account__devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-2); }
+.uu-account__device { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-2); border-radius: var(--radius-lg); background: var(--rx-surface-sunken); }
+@media (max-width: 600px) {
+  .uu-account__qr { align-items: flex-start; flex-direction: column; }
 }
