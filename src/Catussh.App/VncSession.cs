@@ -1,6 +1,7 @@
 using Catussh.Core.RemoteDesktop;
 using Catussh.Core.Ssh;
 using Catussh.Core.Store;
+using Catussh.Core.Utils;
 using Renci.SshNet;
 
 namespace Catussh.App;

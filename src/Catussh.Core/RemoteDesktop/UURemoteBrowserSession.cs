@@ -313,7 +313,7 @@ public sealed class UURemoteBrowserSession : IAsyncDisposable
         if (packet.Length == 0) return;
         char kind = packet[0];
         string rest = packet[1..];
-        if (rest.StartsWith('/', StringComparison.Ordinal))
+        if (rest.StartsWith("/", StringComparison.Ordinal))
         {
             int comma = rest.IndexOf(',');
             if (comma < 0) throw new InvalidDataException("UU Remote Socket.IO namespace packet is malformed.");

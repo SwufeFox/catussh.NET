@@ -139,7 +139,7 @@ public sealed class SshTerminalSession : IDisposable, IAsyncDisposable
             ThrowIfDisposed();
             try
             {
-                _shell.ResizeTerminal(checked((int)columns), checked((int)rows), 0, 0);
+                _shell.ChangeWindowSize(columns, rows, 0, 0);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -310,7 +310,7 @@ public sealed class VncClient : IAsyncDisposable
     private static async Task DiscardAsync(Stream s,int n,CancellationToken ct) { byte[] b=await ReadExactAsync(s,n,ct).ConfigureAwait(false); }
     private async Task<string> ReadReasonAsync(Stream s,CancellationToken ct) { uint n=BinaryPrimitives.ReadUInt32BigEndian(await ReadExactAsync(s,4,ct).ConfigureAwait(false));if(n>MaxNameBytes)throw new IOException("Refusal reason exceeds limit.");return Encoding.UTF8.GetString(await ReadExactAsync(s,(int)n,ct).ConfigureAwait(false)); }
     private static byte ReverseBits(byte b) { b=(byte)(((b&0x55)<<1)|((b>>1)&0x55));b=(byte)(((b&0x33)<<2)|((b>>2)&0x33));return (byte)((b<<4)|(b>>4)); }
-    private static uint Pixel(ReadOnlySpan<byte> b) => (uint)(0xff000000 | b[2]<<16 | b[1]<<8 | b[0]);
+    private static uint Pixel(ReadOnlySpan<byte> b) => 0xff000000u | ((uint)b[2] << 16) | ((uint)b[1] << 8) | b[0];
     private void Put(int x,int y,ReadOnlySpan<byte> p) { int i=(y*_width+x)*4;_rgba[i]=p[2];_rgba[i+1]=p[1];_rgba[i+2]=p[0];_rgba[i+3]=255; }
     private void Fill(int x,int y,int w,int h,uint p) { byte r=(byte)(p>>16),g=(byte)(p>>8),b=(byte)p;for(int yy=y;yy<y+h;yy++)for(int xx=x;xx<x+w;xx++){int i=(yy*_width+xx)*4;_rgba[i]=r;_rgba[i+1]=g;_rgba[i+2]=b;_rgba[i+3]=255;} }
     private void Copy(int sx,int sy,int dx,int dy,int w,int h) { if(sx+w>_width||sy+h>_height)throw new IOException("CopyRect exceeds framebuffer bounds.");int start=dy>sy? h-1:0,end=dy>sy?-1:h,step=dy>sy?-1:1;for(int row=start;row!=end;row+=step){int from=((sy+row)*_width+sx)*4,to=((dy+row)*_width+dx)*4;Buffer.BlockCopy(_rgba,from,_rgba,to,w*4);} }

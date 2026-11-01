@@ -123,6 +123,7 @@ internal sealed class CloudflareAccessTunnel : IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
         var socket = new ClientWebSocket();
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        socket.Options.CollectHttpResponseDetails = true;
         if (usesServiceToken)
         {
             socket.Options.SetRequestHeader("Cf-Access-Client-Id", serviceTokenId);
@@ -146,14 +147,14 @@ internal sealed class CloudflareAccessTunnel : IDisposable
         }
         catch (Exception ex)
         {
+            string description = DescribeAccessFailure(uri.Host, usesServiceToken, ex, socket.HttpStatusCode);
             socket.Dispose();
-            throw new InvalidOperationException(DescribeAccessFailure(uri.Host, usesServiceToken, ex), ex);
+            throw new InvalidOperationException(description, ex);
         }
     }
 
-    private static string DescribeAccessFailure(string hostname, bool usesServiceToken, Exception error)
+    private static string DescribeAccessFailure(string hostname, bool usesServiceToken, Exception error, HttpStatusCode? status)
     {
-        var status = (error as WebSocketException)?.HttpStatusCode;
         if (status is HttpStatusCode.Found or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             return usesServiceToken

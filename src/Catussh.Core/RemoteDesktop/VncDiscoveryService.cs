@@ -114,7 +114,7 @@ public sealed class VncDiscoveryService : IAsyncDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested) { }
-        catch (SocketException ex) when (cancellationToken.IsCancellationRequested) { }
+        catch (SocketException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex) when (ex is SocketException or IOException or InvalidDataException or ArgumentException)
         {
             lock (_gate)
